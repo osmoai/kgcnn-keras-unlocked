@@ -131,8 +131,16 @@ def splitingTrain_Val(dataset,labels,data_length, inputs=None, hypers=None, idx=
     train = ~test
     testidx = np.transpose(np.where(test==True))
     trainidx = np.transpose(np.where(train==True))
+    # Debug: Print what inputs are being requested
+    print(f"DEBUG: Requesting tensor with inputs: {[inp['name'] for inp in inputs]}")
     xtrain, ytrain = dataset[trainidx].tensor(inputs), labels[trainidx,:]
     xtest, ytest = dataset[testidx].tensor(inputs), labels[testidx,:]
+    
+    # Debug: Print what we actually got
+    print(f"DEBUG: xtrain has {len(xtrain)} inputs")
+    if hasattr(xtrain, '__iter__'):
+        for i, x in enumerate(xtrain):
+            print(f"DEBUG: xtrain[{i}] shape: {x.shape}, type: {type(x)}")
     
     ytrain = tf.reshape(ytrain, shape=(len(trainidx),labels.shape[1]))
     ytest = tf.reshape(ytest, shape=(len(testidx),labels.shape[1]))
@@ -222,7 +230,21 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
                                has_conformers=False)
             if len(descs)>0:
                 print('Adding the graph_attributes from csv file!')
-                dataset.set_attributes(add_hydrogen=False,has_conformers=is3D,   additional_callbacks= {"graph_desc": descriptor_callback})
+                # Use state_attributes for DMPNN, graph_desc for other models
+                callback_name = "state_attributes" if modelname == "DMPNN" else "graph_desc"
+                print(f"Using callback name: {callback_name} for model: {modelname}")
+                
+                # For DMPNN, also add graph_desc callback as fallback for compatibility
+                if modelname == "DMPNN":
+                    additional_callbacks = {
+                        "state_attributes": descriptor_callback,
+                        "graph_desc": descriptor_callback  # Fallback for compatibility
+                    }
+                    print(f"DMPNN: Added both state_attributes and graph_desc callbacks for maximum compatibility")
+                else:
+                    additional_callbacks = {callback_name: descriptor_callback}
+                
+                dataset.set_attributes(add_hydrogen=False,has_conformers=is3D, additional_callbacks=additional_callbacks)
     
             else:
                 dataset.set_attributes(add_hydrogen=False,has_conformers=is3D)
@@ -243,7 +265,21 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
                                
         if len(descs)>0:
                 print('Adding the graph_attributes from csv file!')
-                dataset.set_attributes(add_hydrogen=False,has_conformers=is3D,   additional_callbacks= {"graph_desc": descriptor_callback})
+                # Use state_attributes for DMPNN, graph_desc for other models
+                callback_name = "state_attributes" if modelname == "DMPNN" else "graph_desc"
+                print(f"Using callback name: {callback_name} for model: {modelname}")
+                
+                # For DMPNN, also add graph_desc callback as fallback for compatibility
+                if modelname == "DMPNN":
+                    additional_callbacks = {
+                        "state_attributes": descriptor_callback,
+                        "graph_desc": descriptor_callback  # Fallback for compatibility
+                    }
+                    print(f"DMPNN: Added both state_attributes and graph_desc callbacks for maximum compatibility")
+                else:
+                    additional_callbacks = {callback_name: descriptor_callback}
+                
+                dataset.set_attributes(add_hydrogen=False,has_conformers=is3D, additional_callbacks=additional_callbacks)
     
         else:
                 dataset.set_attributes(add_hydrogen=False,has_conformers=is3D)
@@ -282,6 +318,32 @@ nn_return_proba = int(getConfig("Details", "return_proba", 0));
 nn_loss = str(getConfig("Details", "nn_loss", "RMSE"));
 nn_lr_start = float(getConfig("Details", "nn_lr_start", 1e-2));
 output_dim = int(getConfig("Details", "output_dim", 1));
+print(f"Read output_dim from config: {output_dim}")
+activation = str(getConfig("Details", "activation", "linear"));
+print(f"Read activation from config: {activation}")
+lossdef = str(getConfig("Details", "lossdef", "RMSEmask"));
+print(f"Read lossdef from config: {lossdef}")
+
+# Map loss function names to actual functions
+loss_function_map = {
+    "BCEmask": BCEmask,
+    "CCEmask": CCEmask,
+    "RMSEmask": RMSEmask,
+    "MaskedRMSE": MaskedRMSE,
+    "mean_squared_error": "mean_squared_error",
+    "mean_absolute_error": "mean_absolute_error",
+    "binary_crossentropy": "binary_crossentropy",
+    "categorical_crossentropy": "categorical_crossentropy"
+}
+
+# Get the actual loss function
+if lossdef in loss_function_map:
+    loss_function = loss_function_map[lossdef]
+    print(f"Using loss function: {lossdef}")
+else:
+    loss_function = lossdef  # Use as string if not in map
+    print(f"Using loss function as string: {lossdef}")
+
 desc_dim = int(getConfig("Details", "desc_dim", 0));
 
 # Descriptor parameters
@@ -301,8 +363,9 @@ print("Architecture selected:", architecture_name)
 
 # Function to update output dimensions in model configuration
 def update_output_dimensions(config_dict, architecture_name=None):
-    """Update output dimensions in model configuration based on config file"""
+    """Update output dimensions and activation in model configuration based on config file"""
     print(f"Updating output dimensions for output_dim = {output_dim}")
+    print(f"Updating activation to: {activation}")
     
     # If architecture_name is provided, try to read from config file first
     if architecture_name and architecture_name in config:
@@ -342,6 +405,14 @@ def update_output_dimensions(config_dict, architecture_name=None):
         elif isinstance(config_dict["output_mlp"].get('units', 1), int):
             config_dict["output_mlp"]['units'] = output_dim
             print(f"Updated output_mlp units: {config_dict['output_mlp']['units']}")
+        
+        # Update activation
+        if isinstance(config_dict["output_mlp"].get('activation', []), list) and len(config_dict["output_mlp"]['activation']) > 0:
+            config_dict["output_mlp"]['activation'][-1] = activation
+            print(f"Updated output_mlp activation list: {config_dict['output_mlp']['activation']}")
+        elif isinstance(config_dict["output_mlp"].get('activation', 'linear'), str):
+            config_dict["output_mlp"]['activation'] = activation
+            print(f"Updated output_mlp activation: {config_dict['output_mlp']['activation']}")
         print(f"After update - output_mlp: {config_dict['output_mlp']}")
     
     if "last_mlp" in config_dict:
@@ -352,31 +423,45 @@ def update_output_dimensions(config_dict, architecture_name=None):
         elif isinstance(config_dict["last_mlp"].get('units', 1), int):
             config_dict["last_mlp"]['units'] = output_dim
             print(f"Updated last_mlp units: {config_dict['last_mlp']['units']}")
+        
+        # Update activation
+        if isinstance(config_dict["last_mlp"].get('activation', []), list) and len(config_dict["last_mlp"]['activation']) > 0:
+            config_dict["last_mlp"]['activation'][-1] = activation
+            print(f"Updated last_mlp activation list: {config_dict['last_mlp']['activation']}")
+        elif isinstance(config_dict["last_mlp"].get('activation', 'linear'), str):
+            config_dict["last_mlp"]['activation'] = activation
+            print(f"Updated last_mlp activation: {config_dict['last_mlp']['activation']}")
         print(f"After update - last_mlp: {config_dict['last_mlp']}")
     
     return config_dict
 
 
 if architecture_name == 'GCN':
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "GCN",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 1], "name": "edge_weights", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}],
+        "input_embedding": {"node": {"input_dim": 95, "output_dim": 100},
+                            "edge": {"input_dim": 10, "output_dim": 100},
+                            "graph": {"input_dim": 100, "output_dim": 64}},
+        "gcn_args": {"units": 200, "use_bias": True, "activation": "relu"},
+        "depth": 5, "verbose": 10,
+        "output_embedding": "graph",
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                       "activation": ["kgcnn>leaky_relu", "kgcnn>leaky_relu", "linear"]}
+    }
+    
+    # Update output dimensions based on config file
+    model_config = update_output_dimensions(model_config, architecture_name)
+    
     hyper = {
         "model": {
             "class_name": "make_model",
             "module_name": "kgcnn.literature.GCN",
-            "config": {
-                "name": "GCN",
-                "inputs": [
-                    {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
-                    {"shape": [None, 1], "name": "edge_weights", "dtype": "float32", "ragged": True},
-                    {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}],
-                "input_embedding": {"node": {"input_dim": 95, "output_dim": 100},
-                                    "edge": {"input_dim": 10, "output_dim": 100},
-                                    "graph": {"input_dim": 100, "output_dim": 64}},
-                "gcn_args": {"units": 200, "use_bias": True, "activation": "relu"},
-                "depth": 5, "verbose": 10,
-                "output_embedding": "graph",
-                "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
-                               "activation": ["kgcnn>leaky_relu", "kgcnn>leaky_relu", "linear"]}
-            }
+            "config": model_config
         },
         "training": {
             "fit": {
@@ -423,31 +508,37 @@ if architecture_name == 'GCN':
         hyper["model"]["config"]["use_graph_state"] = True
         print(f"Added descriptor input with dimension {desc_dim} to GCN")
 
-if architecture_name == 'GAT':
+elif architecture_name == 'GAT':
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "GAT",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 100},
+            "edge": {"input_dim": 8, "output_dim": 100},
+            "graph": {"input_dim": 100, "output_dim": 64}},
+        "attention_args": {"units": 100, "use_bias": True, "use_edge_features": True,
+                           "use_final_activation": False, "has_self_loops": True},
+        "pooling_nodes_args": {"pooling_method": "sum"},
+        "depth": 4, "attention_heads_num": 10,
+        "attention_heads_concat": False, "verbose": 10,
+        "output_embedding": "graph",
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                       "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+    }
+    
+    # Update output dimensions based on config file
+    model_config = update_output_dimensions(model_config, architecture_name)
+    
     hyper = {
         "model": {
             "class_name": "make_model",
             "module_name": "kgcnn.literature.GAT",
-            "config": {
-                "name": "GAT",
-                "inputs": [
-                    {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
-                    {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
-                    {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}
-                ],
-                "input_embedding": {
-                    "node": {"input_dim": 95, "output_dim": 100},
-                    "edge": {"input_dim": 8, "output_dim": 100},
-                    "graph": {"input_dim": 100, "output_dim": 64}},
-                "attention_args": {"units": 100, "use_bias": True, "use_edge_features": True,
-                                   "use_final_activation": False, "has_self_loops": True},
-                "pooling_nodes_args": {"pooling_method": "sum"},
-                "depth": 4, "attention_heads_num": 10,
-                "attention_heads_concat": False, "verbose": 10,
-                "output_embedding": "graph",
-                "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
-                               "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
-            }
+            "config": model_config
         },
         "training": {
             "fit": {
@@ -489,7 +580,7 @@ if architecture_name == 'GAT':
         hyper["model"]["config"]["use_graph_state"] = True
         print(f"Added descriptor input with dimension {desc_dim} to GAT")
 
-if architecture_name == 'GATv2':
+elif architecture_name == 'GATv2':
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -554,7 +645,7 @@ if architecture_name == 'GATv2':
         hyper["model"]["config"]["use_graph_state"] = True
         print(f"Added descriptor input with dimension {desc_dim} to GATv2")
 
-if architecture_name == 'CMPNN':
+elif architecture_name == 'CMPNN':
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -627,7 +718,7 @@ if architecture_name == 'CMPNN':
 
 
 # Accept both 'AttFP' and 'AttentiveFP' for AttentiveFP model
-if architecture_name in ['AttFP', 'AttentiveFP']:
+elif architecture_name in ['AttFP', 'AttentiveFP']:
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -713,7 +804,7 @@ if architecture_name in ['AttFP', 'AttentiveFP']:
                 hyper["model"]["config"]["input_embedding"]["graph"] = {"input_dim": 100, "output_dim": 64}
 
 # CoAttentiveFP (Collaborative Attentive Fingerprint) - Enhanced AttFP with collaborative attention
-if architecture_name == 'CoAttentiveFP':
+elif architecture_name == 'CoAttentiveFP':
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -786,7 +877,7 @@ if architecture_name == 'CoAttentiveFP':
         hyper["model"]["config"]["use_graph_state"] = True
 
 # AttentiveFP+ (Multi-scale Attention Fusion) - Enhanced AttFP with multi-scale attention
-if architecture_name == 'AttentiveFPPlus':
+elif architecture_name == 'AttentiveFPPlus':
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -860,7 +951,7 @@ if architecture_name == 'AttentiveFPPlus':
         hyper["model"]["config"]["use_graph_state"] = True
 
 # CMPNN+ (Communicative Message Passing Neural Network) - Enhanced CMPNN with multi-level communicative message passing
-if architecture_name == 'CMPNNPlus':
+elif architecture_name == 'CMPNNPlus':
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -936,7 +1027,7 @@ if architecture_name == 'CMPNNPlus':
         hyper["model"]["config"]["use_graph_state"] = True
 
 # DMPNN with Attention Readout - Enhanced DMPNN with attention-based pooling
-if architecture_name == 'DMPNNAttention':
+elif architecture_name == 'DMPNNAttention':
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -1012,7 +1103,7 @@ if architecture_name == 'DMPNNAttention':
         hyper["model"]["config"]["use_graph_state"] = True
 
 # checked
-if architecture_name in ['NMPN','MPNN']:
+elif architecture_name in ['NMPN','MPNN']:
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -1081,7 +1172,7 @@ if architecture_name in ['NMPN','MPNN']:
 
 
 # Enhanced DGIN (Directed GIN) with descriptor support
-if architecture_name == 'DGIN':
+elif architecture_name == 'DGIN':
     # Define model configuration in Python and update output dimensions
     model_config = {
         "name": "DGIN",
@@ -1165,7 +1256,9 @@ if architecture_name == 'DGIN':
     }
 
 # AddGNN (Additive Attention GNN) with descriptor support
-if architecture_name == 'AddGNN':
+elif architecture_name == 'AddGNN':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found AddGNN architecture!")
     # Define model configuration in Python and update output dimensions
     model_config = {
         "name": "AddGNN",
@@ -1240,7 +1333,7 @@ if architecture_name == 'AddGNN':
     }
 
 # GraphTransformer (Graph Transformer Neural Network) with descriptor support
-if architecture_name == 'GraphTransformer':
+elif architecture_name == 'GraphTransformer':
     # Define model configuration in Python and update output dimensions
     model_config = {
         "name": "GraphTransformer",
@@ -1325,38 +1418,59 @@ if architecture_name == 'GraphTransformer':
     }
 
 # checked
-if architecture_name in ['ChemProp', 'DMPNN']:
+elif architecture_name in ['ChemProp', 'DMPNN']:
+    print(f"Executing DMPNN/ChemProp configuration block for architecture: {architecture_name}")
+    # Base inputs for DMPNN
+    dmpnn_inputs = [
+        {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+        {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+        {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+        {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True}
+    ]
+    
+    # Add descriptor input if enabled - support both state_attributes and graph_desc names
+    if descs:
+        # Use state_attributes as the primary name (DMPNN native)
+        dmpnn_inputs.append({"shape": [desc_dim], "name": "state_attributes", "dtype": "float32", "ragged": False})
+        print(f"Added descriptor input with dimension {desc_dim} to DMPNN (as state_attributes)")
+        print(f"DMPNN inputs: {len(dmpnn_inputs)} inputs configured")
+    else:
+        print(f"DMPNN inputs: {len(dmpnn_inputs)} inputs configured (no descriptors)")
+    
+    model_config = {
+        "name": "DMPNN",
+        "inputs": dmpnn_inputs,
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 100},
+            "edge": {"input_dim": 5, "output_dim": 100},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        # Add descriptor embedding if descriptors are used
+        "use_graph_state": descs,  # Enable graph state when using descriptors
+        "pooling_args": {"pooling_method": "sum"},
+        "edge_initialize": {"units": 200, "use_bias": True, "activation": "relu"},
+        "edge_dense": {"units": 200, "use_bias": True, "activation": "linear"},
+        "edge_activation": {"activation": "relu"},
+        "node_dense": {"units": 200, "use_bias": True, "activation": "relu"},
+        "verbose": 10, "depth": 5,
+        "dropout": {"rate": 0.2},
+        "output_embedding": "graph",
+        "output_mlp": {
+            "use_bias": [True, True, False], "units": [200, 100, output_dim],
+            "activation": ["kgcnn>leaky_relu", "selu", "linear"]
+        }
+    }
+    
+    # Update output dimensions and activation
+    model_config = update_output_dimensions(model_config, architecture_name)
+    print(f"DMPNN model config - use_graph_state: {model_config.get('use_graph_state', 'Not set')}")
+    print(f"DMPNN model config - inputs count: {len(model_config['inputs'])}")
+    
     hyper = {
         "model": {
             "class_name": "make_model",
             "module_name": "kgcnn.literature.DMPNN",
-            "config": {
-                "name": "DMPNN",
-                "inputs": [
-                    {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
-                    {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
-                    {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True}
-                ],
-                "input_embedding": {
-                    "node": {"input_dim": 95, "output_dim": 100},
-                    "edge": {"input_dim": 5, "output_dim": 100},
-                    "graph": {"input_dim": 100, "output_dim": 64}
-                },
-                "pooling_args": {"pooling_method": "sum"},
-                "use_graph_state": False,
-                "edge_initialize": {"units": 200, "use_bias": True, "activation": "relu"},
-                "edge_dense": {"units": 200, "use_bias": True, "activation": "linear"},
-                "edge_activation": {"activation": "relu"},
-                "node_dense": {"units": 200, "use_bias": True, "activation": "relu"},
-                "verbose": 10, "depth": 5,
-                "dropout": {"rate": 0.2},
-                "output_embedding": "graph",
-                "output_mlp": {
-                    "use_bias": [True, True, False], "units": [200, 100, output_dim],
-                    "activation": ["kgcnn>leaky_relu", "selu", "linear"]
-                }
-            }
+            "config": model_config
         },
         "training": {
             "fit": {"batch_size": 32, "epochs": 300, "validation_freq": 1, "verbose": 2, "callbacks": []
@@ -1371,7 +1485,7 @@ if architecture_name in ['ChemProp', 'DMPNN']:
                               }
                               }
                               },
-                "loss": "mean_absolute_error"
+                "loss": loss_function
             },
             "cross_validation": {"class_name": "KFold",
                                  "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
@@ -1395,7 +1509,7 @@ if architecture_name in ['ChemProp', 'DMPNN']:
 
 
 # checked
-if architecture_name == 'RGCN':
+elif architecture_name == 'RGCN':
     hyper =  {
         "model": {
             "class_name": "make_model",
@@ -1460,7 +1574,8 @@ if architecture_name == 'RGCN':
     }
 
 
-if architecture_name == 'rGIN':
+elif architecture_name == 'rGIN':
+    print(f"Executing rGIN configuration block")
     # Define model configuration in Python and update output dimensions
     model_config = {
         "name": "rGIN",
@@ -1526,7 +1641,7 @@ if architecture_name == 'rGIN':
         }
     }
 
-if architecture_name == 'rGINE':
+elif architecture_name == 'rGINE':
     # Define model configuration in Python and update output dimensions
     model_config = {
         "name": "rGINE",
@@ -1595,7 +1710,7 @@ if architecture_name == 'rGINE':
 
 
 
-if architecture_name == 'GIN':
+elif architecture_name == 'GIN':
     # Define model configuration in Python and update output dimensions
     model_config = {
         "name": "GIN",
@@ -1656,7 +1771,7 @@ if architecture_name == 'GIN':
         }
     }
 
-if architecture_name == 'GINE':
+elif architecture_name == 'GINE':
     # Define model configuration in Python and update output dimensions
     model_config = {
         "name": "GIN",
@@ -1720,7 +1835,7 @@ if architecture_name == 'GINE':
     }
 
 # GraphGPS (Graph Property Prediction with Subgraph) with descriptor support
-if architecture_name == 'GraphGPS':
+elif architecture_name == 'GraphGPS':
     # Define model configuration in Python and update output dimensions
     model_config = {
         "name": "GraphGPS",
@@ -1812,7 +1927,7 @@ if architecture_name == 'GraphGPS':
 
 
 # PNA (Principal Neighborhood Aggregation) - Enhanced GIN with multiple aggregators and degree scaling
-if architecture_name == 'PNA':
+elif architecture_name == 'PNA':
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -1885,7 +2000,7 @@ if architecture_name == 'PNA':
         hyper["model"]["config"]["use_graph_state"] = True
 
 # ExpC (Expressive Graph Neural Network with Path Counting) - Enhanced GIN with subgraph counting
-if architecture_name == 'ExpC':
+elif architecture_name == 'ExpC':
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -1957,7 +2072,7 @@ if architecture_name == 'ExpC':
         hyper["model"]["config"]["use_graph_state"] = True
 
 # EGAT (Edge-Guided Graph Attention) - Enhanced GAT with edge feature guidance
-if architecture_name == 'EGAT':
+elif architecture_name == 'EGAT':
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -2031,7 +2146,7 @@ if architecture_name == 'EGAT':
         hyper["model"]["config"]["use_graph_state"] = True
 
 # TransformerGAT (Transformer-enhanced GAT) - Combines local GAT with global transformer attention
-if architecture_name == 'TransformerGAT':
+elif architecture_name == 'TransformerGAT':
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -2105,7 +2220,7 @@ if architecture_name == 'TransformerGAT':
         hyper["model"]["config"]["use_graph_state"] = True
 
 # GRPE (Graph Relative Positional Encoding Transformer) - Enhanced GraphTransformer with relative positional encoding
-if architecture_name == 'GRPE':
+elif architecture_name == 'GRPE':
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -2179,7 +2294,7 @@ if architecture_name == 'GRPE':
         hyper["model"]["config"]["use_graph_state"] = True
 
 # KA-GAT (Kolmogorov-Arnold Graph Attention Network) - Enhanced GAT with Fourier-KAN
-if architecture_name == 'KAGAT':
+elif architecture_name == 'KAGAT':
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -2256,7 +2371,7 @@ if architecture_name == 'KAGAT':
         hyper["model"]["config"]["use_graph_state"] = True
 
 # DHTNN (Double-Head Transformer Neural Network) - Enhanced DMPNN with double-head attention
-if architecture_name == 'DHTNN':
+elif architecture_name == 'DHTNN':
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -2333,7 +2448,7 @@ if architecture_name == 'DHTNN':
         hyper["model"]["config"]["use_graph_state"] = True
 
 # DHTNNPlus (Enhanced Double-Head Transformer Neural Network) - Best of both worlds
-if architecture_name == 'DHTNNPlus':
+elif architecture_name == 'DHTNNPlus':
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -2409,6 +2524,96 @@ if architecture_name == 'DHTNNPlus':
             )
             print(f"Added descriptor input with dimension {desc_dim} to DHTNNPlus")
         hyper["model"]["config"]["use_graph_state"] = True
+
+# ContrastiveGIN implementation
+elif architecture_name == 'ContrastiveGIN':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found ContrastiveGIN architecture!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "ContrastiveGIN",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "use_graph_state": True,
+        "depth": 5,
+        "units": 128,
+        "output_embedding": "graph",
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]},
+        "contrastive_args": {
+            "num_views": 2,
+            "use_contrastive_loss": True,
+            "contrastive_loss_type": "infonce",
+            "temperature": 0.1,
+            "use_diversity_loss": True,
+            "use_auxiliary_loss": True,
+            "edge_drop_rate": 0.1,
+            "node_mask_rate": 0.1
+        }
+    }
+    
+    # Update output dimensions and activation based on config file
+    print(f"Before update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"Before update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    model_config = update_output_dimensions(model_config, architecture_name)
+    print(f"After update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"After update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    
+    hyper = {
+        "model": {
+            "class_name": "make_contrastive_gin_model",
+            "module_name": "kgcnn.literature.ContrastiveGNN",
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function,
+                "contrastive_weight": 0.1,
+                "diversity_weight": 0.01,
+                "alignment_weight": 0.01,
+                "use_regression_aware": False,
+                "target_similarity_threshold": 0.1,
+                "similarity_metric": "euclidean"
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "ESOLDataset",
+                "module_name": "kgcnn.data.datasets.ESOLDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}},
+                    {"map_list": {"method": "set_edge_indices_reverse"}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
 
 
 # Print to visually make sure we have parsed correctly the parameters
@@ -2506,6 +2711,23 @@ if TRAIN == "True":
                 hyper["model"]["config"]["input_embedding"]["graph"] = {"input_dim": 100, "output_dim": 64}
 
 
+    # Clean up duplicate inputs for DMPNN
+    if 'hyper' in locals() and hyper is not None and hyper["model"]["config"]["name"] in ['DMPNN', 'ChemProp']:
+        input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
+        if "state_attributes" in input_names and "graph_desc" in input_names:
+            print("Cleaning up: Removing duplicate graph_desc input for DMPNN")
+            hyper["model"]["config"]["inputs"] = [
+                input_config for input_config in hyper["model"]["config"]["inputs"] 
+                if input_config["name"] != "graph_desc"
+            ]
+    
+    # Check if architecture was found
+    if 'hyper' not in locals() or hyper is None:
+        raise ValueError(f"Architecture '{architecture_name}' is not implemented. Available architectures: GCN, GAT, GATv2, CMPNN, CoAttentiveFP, AttentiveFPPlus, CMPNNPlus, DMPNNAttention, DGIN, AddGNN, GraphTransformer, RGCN, rGIN, rGINE, GIN, GINE, GraphGPS, PNA, ExpC, EGAT, TransformerGAT, GRPE, KAGAT, DHTNN, DHTNNPlus, ContrastiveGIN")
+    
+    print(f"Selected architecture: {architecture_name}")
+    print(f"Model name: {hyper['model']['config']['name']}")
+    
     # failed next line for GINE parameters
     hyperparams = HyperParameter(hyper,
                                  model_name=hyper["model"]["config"]["name"],
@@ -2520,10 +2742,42 @@ if TRAIN == "True":
     dataset, invalid= prepData(TRAIN_FILE, cols, hyper=hyperparams, 
         modelname=architecture_name, overwrite=overwrite, descs=descs)
 
+    # Fix input names for DMPNN with descriptors - support both state_attributes and graph_desc
+    if architecture_name == "DMPNN" and descs:
+        print("Processing DMPNN input names for descriptors...")
+        input_names = [input_config["name"] for input_config in hyperparams["model"]["config"]["inputs"]]
+        
+        # Check if we have both state_attributes and graph_desc (shouldn't happen with our fixes, but just in case)
+        if "state_attributes" in input_names and "graph_desc" in input_names:
+            print("Warning: Both state_attributes and graph_desc found. Removing graph_desc to avoid duplicates.")
+            hyperparams["model"]["config"]["inputs"] = [
+                input_config for input_config in hyperparams["model"]["config"]["inputs"] 
+                if input_config["name"] != "graph_desc"
+            ]
+        # If we only have graph_desc, rename it to state_attributes
+        elif "graph_desc" in input_names and "state_attributes" not in input_names:
+            for input_config in hyperparams["model"]["config"]["inputs"]:
+                if input_config["name"] == "graph_desc":
+                    input_config["name"] = "state_attributes"
+                    print(f"Changed input name from 'graph_desc' to 'state_attributes'")
+                    break
+        # If we already have state_attributes, that's perfect
+        elif "state_attributes" in input_names:
+            print("DMPNN already has state_attributes input - perfect!")
+        else:
+            print("Warning: No descriptor input found for DMPNN despite descriptors being enabled")
+
+    print(f"Validating model inputs: {[input_config['name'] for input_config in hyperparams['model']['config']['inputs']]}")
     dataset.assert_valid_model_input(hyperparams["model"]["config"]["inputs"])  # failed for GCN code here
 
     # Model identification
-    make_model = get_model_class(hyperparams["model"]["config"]["name"], hyperparams["model"]["class_name"])
+    if architecture_name.startswith('Contrastive'):
+        # Import contrastive model directly
+        print(f"Creating contrastive model: {architecture_name}")
+        from kgcnn.literature.ContrastiveGNN import make_contrastive_gin_model
+        make_model = make_contrastive_gin_model
+    else:
+        make_model = get_model_class(hyperparams["model"]["config"]["name"], hyperparams["model"]["class_name"])
 
     # check Dataset
     data_name = dataset.dataset_name
@@ -2551,7 +2805,24 @@ if TRAIN == "True":
 
     model = None
     # Make model
-    model = make_model(**hyperparam['model']["config"])
+    if architecture_name.startswith('Contrastive'):
+        # For contrastive models, pass the config directly
+        print(f"Creating model with config: {hyperparam['model']['config']}")
+        model = make_model(**hyperparam['model']["config"])
+        print("Contrastive model created successfully!")
+    else:
+        # For DMPNN, we need to keep use_graph_state for descriptor support
+        if hyperparam["model"]["config"]["name"] in ['DMPNN', 'ChemProp']:
+            print(f"Creating {hyperparam['model']['config']['name']} model with use_graph_state support")
+            model = make_model(**hyperparam['model']["config"])
+        else:
+            # Fix to make models working with the saved old ChemProp models
+            if 'use_graph_state' in hyperparam["model"]["config"].keys():
+                r = dict(hyperparam["model"]["config"])
+                del r['use_graph_state']
+                model = make_model(**r)
+            else:
+                model = make_model(**hyperparam['model']["config"])
 
     opt = tf.optimizers.legacy.Adam(learning_rate=cfg_learning_rate)
     
@@ -2579,10 +2850,28 @@ if TRAIN == "True":
     # --- End auto-switch block ---
     
     # need to change this for class / regression
-    if isClass:
-        model.compile(opt, loss=BCEmask, metrics=['accuracy'])
+    if architecture_name.startswith('Contrastive'):
+        # Use special compilation for contrastive models
+        from kgcnn.literature.ContrastiveGNN import compile_contrastive_gnn_model
+        compile_contrastive_gnn_model(
+            model=model,
+            optimizer=opt,
+            learning_rate=cfg_learning_rate,
+            loss=loss_function,
+            metrics=['accuracy'] if lossdef in ["BCEmask", "CCEmask", "binary_crossentropy", "categorical_crossentropy"] else [metric_fn],
+            contrastive_weight=hyperparam['training']['compile'].get('contrastive_weight', 0.1),
+            diversity_weight=hyperparam['training']['compile'].get('diversity_weight', 0.01),
+            alignment_weight=hyperparam['training']['compile'].get('alignment_weight', 0.01),
+            use_regression_aware=hyperparam['training']['compile'].get('use_regression_aware', False),
+            target_similarity_threshold=hyperparam['training']['compile'].get('target_similarity_threshold', 0.1),
+            similarity_metric=hyperparam['training']['compile'].get('similarity_metric', 'euclidean')
+        )
     else:
-        model.compile(opt, loss=loss_fn, metrics=[metric_fn])
+        # Use appropriate metrics based on loss function
+        if lossdef in ["BCEmask", "CCEmask", "binary_crossentropy", "categorical_crossentropy"]:
+            model.compile(opt, loss=loss_function, metrics=['accuracy'])
+        else:
+            model.compile(opt, loss=loss_function, metrics=[metric_fn])
 
     print(model.summary())
 
@@ -2590,6 +2879,14 @@ if TRAIN == "True":
     hyper_fit = hyperparam['training']['fit']
     start = time.process_time()
 
+    # Debug: Print input shapes and names
+    print(f"DEBUG: Model expects {len(model.inputs)} inputs")
+    print(f"DEBUG: Model input names: {[inp.name for inp in model.inputs]}")
+    print(f"DEBUG: xtrain has {len(xtrain)} inputs")
+    if hasattr(xtrain, '__iter__'):
+        for i, x in enumerate(xtrain):
+            print(f"DEBUG: xtrain[{i}] shape: {x.shape}, type: {type(x)}")
+    
     # need to change that to have ragged not numpy or tensor error
     hist = model.fit(xtrain, ytrain,
                      validation_data=(xtest, ytest),
