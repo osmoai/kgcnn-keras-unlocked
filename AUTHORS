@@ -1,0 +1,28 @@
+List of contributors to kgcnn modules.
+
+- GNNExplainer module by Robin Ruff
+- DHTNN & DHTNNPlus modules by Guillaume Godin
+- KA-GAT module by Guillaume Godin
+- Contrastive modules by Guillaume Godin
+	- ContrastiveGIN 
+	- ContrastiveGAT
+	- ContrastiveDMPNN
+	- ContrastiveAttFP
+	- ContrastiveAddGNN
+	- ContrastiveDGIN
+	- ContrastivePNA
+- MultiGraphMoE module by Guillaume Godin
+- CoAttentiveFP module by Guillaume Godin
+- AttentiveFPPlus module by Guillaume Godin
+- CMPNNPlus module by Guillaume Godin
+- DMPNNAttention module by Guillaume Godin
+- GraphTransformer module by Guillaume Godin
+- GraphGPS module by Guillaume Godin
+- rGINE module by Guillaume Godin
+- AddGNN module by Guillaume Godin
+- PNA module by Guillaume Godin
+- ExpC module by Guillaume Godin
+- EGAT module by Guillaume Godin
+- TransformerGAT module by Guillaume Godin
+- GRPE module by Guillaume Godin
+- AddGNN module by Guillaume Godin
