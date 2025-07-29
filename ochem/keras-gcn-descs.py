@@ -2756,7 +2756,10 @@ elif architecture_name == 'ContrastiveGAT':
             "use_contrastive_loss": True,
             "contrastive_loss_type": "infonce",
             "temperature": 0.1,
-            "contrastive_weight": 0.1
+            "contrastive_weight": 0.1,
+            "num_views": 2,
+            "use_diversity_loss": False,
+            "use_auxiliary_loss": False
         }
     }
     
@@ -2770,7 +2773,7 @@ elif architecture_name == 'ContrastiveGAT':
     hyper = {
         "model": {
             "class_name": "make_contrastive_gat_model",
-            "module_name": "kgcnn.literature.GAT",  # Use regular GAT as base
+            "module_name": "kgcnn.literature.ContrastiveGNN",  # Use ContrastiveGNN module
             "config": model_config
         },
         "training": {
@@ -3939,7 +3942,7 @@ if TRAIN == "True":
             from kgcnn.literature.GIN import make_contrastive_gin_model
             model = make_contrastive_gin_model(**hyperparam['model']["config"])
         elif architecture_name == 'ContrastiveGAT':
-            from kgcnn.literature.GAT import make_contrastive_gat_model
+            from kgcnn.literature.ContrastiveGNN import make_contrastive_gat_model
             model = make_contrastive_gat_model(**hyperparam['model']["config"])
         elif architecture_name == 'ContrastiveGATv2':
             from kgcnn.literature.ContrastiveGNN import make_contrastive_gatv2_model

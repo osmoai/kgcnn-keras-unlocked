@@ -298,6 +298,9 @@ def make_contrastive_gnn_model(
                 )
                 gat_views.append(gat_layer)
             
+            # Store the GAT views for contrastive loss computation
+            gnn_layers.append(gat_views)
+            
             # Apply GAT views and combine
             view_outputs = []
             for gat_layer in gat_views:
@@ -323,6 +326,9 @@ def make_contrastive_gnn_model(
                     use_bias=True
                 )
                 gatv2_views.append(gatv2_layer)
+            
+            # Store the GATv2 views for contrastive loss computation
+            gnn_layers.append(gatv2_views)
             
             # Apply GATv2 views and combine
             view_outputs = []
