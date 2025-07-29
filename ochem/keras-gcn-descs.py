@@ -1491,11 +1491,11 @@ elif architecture_name in ['ChemProp', 'DMPNN']:
         {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True}
     ]
     
-    # Add descriptor input if enabled - support both state_attributes and graph_descriptors names
+    # Add descriptor input if enabled - use graph_descriptors name
     if descs:
-        # Use state_attributes as the primary name (DMPNN native)
-        dmpnn_inputs.append({"shape": [desc_dim], "name": "state_attributes", "dtype": "float32", "ragged": False})
-        print(f"Added descriptor input with dimension {desc_dim} to DMPNN (as state_attributes)")
+        # Use graph_descriptors as the standard name
+        dmpnn_inputs.append({"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False})
+        print(f"Added descriptor input with dimension {desc_dim} to DMPNN (as graph_descriptors)")
         print(f"DMPNN inputs: {len(dmpnn_inputs)} inputs configured")
     else:
         print(f"DMPNN inputs: {len(dmpnn_inputs)} inputs configured (no descriptors)")
@@ -2777,12 +2777,18 @@ if TRAIN == "True":
     # Clean up duplicate inputs for DMPNN
     if 'hyper' in locals() and hyper is not None and hyper["model"]["config"]["name"] in ['DMPNN', 'ChemProp']:
         input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if "state_attributes" in input_names and "graph_descriptors" in input_names:
-            print("Cleaning up: Removing duplicate graph_descriptors input for DMPNN")
-            hyper["model"]["config"]["inputs"] = [
-                input_config for input_config in hyper["model"]["config"]["inputs"] 
-                if input_config["name"] != "graph_descriptors"
-            ]
+        if "graph_descriptors" in input_names:
+            # Ensure we only have one graph_descriptors input
+            graph_desc_inputs = [input_config for input_config in hyper["model"]["config"]["inputs"] 
+                               if input_config["name"] == "graph_descriptors"]
+            if len(graph_desc_inputs) > 1:
+                print("Cleaning up: Removing duplicate graph_descriptors inputs for DMPNN")
+                hyper["model"]["config"]["inputs"] = [
+                    input_config for input_config in hyper["model"]["config"]["inputs"] 
+                    if input_config["name"] != "graph_descriptors"
+                ]
+                # Add back one graph_descriptors input
+                hyper["model"]["config"]["inputs"].append(graph_desc_inputs[0])
     
     # Check if architecture was found
     if 'hyper' not in locals() or hyper is None:
@@ -2810,22 +2816,8 @@ if TRAIN == "True":
         print("Processing input names for descriptors...")
         input_names = [input_config["name"] for input_config in hyperparams["model"]["config"]["inputs"]]
         
-        # Check if we have both graph_descriptors and graph_descriptors (shouldn't happen with our fixes, but just in case)
-        if "graph_descriptors" in input_names and "graph_descriptors" in input_names:
-            print("Warning: Both graph_descriptors and graph_descriptors found. Removing graph_descriptors to avoid duplicates.")
-            hyperparams["model"]["config"]["inputs"] = [
-                input_config for input_config in hyperparams["model"]["config"]["inputs"] 
-                if input_config["name"] != "graph_descriptors"
-            ]
-        # If we only have graph_descriptors, rename it to graph_descriptors
-        elif "graph_descriptors" in input_names and "graph_descriptors" not in input_names:
-            for input_config in hyperparams["model"]["config"]["inputs"]:
-                if input_config["name"] == "graph_descriptors":
-                    input_config["name"] = "graph_descriptors"
-                    print(f"Changed input name from 'graph_descriptors' to 'graph_descriptors'")
-                    break
-        # If we already have graph_descriptors, that's perfect
-        elif "graph_descriptors" in input_names:
+        # Check if we have graph_descriptors input
+        if "graph_descriptors" in input_names:
             print(f"{architecture_name} already has graph_descriptors input - perfect!")
         else:
             print("Warning: No descriptor input found despite descriptors being enabled")
