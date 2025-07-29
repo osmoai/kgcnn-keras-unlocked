@@ -50,6 +50,26 @@ def make_contrastive_gnn_model(
     output_mlp=None,
     **kwargs
 ):
+    # Create input tensors from configuration
+    if isinstance(inputs[0], dict):
+        # Inputs are configuration dictionaries, create actual input tensors
+        node_input = ks.layers.Input(**inputs[0])
+        edge_input = ks.layers.Input(**inputs[1])
+        edge_index_input = ks.layers.Input(**inputs[2])
+        
+        # Handle graph_descriptors input if provided
+        if len(inputs) > 3:
+            graph_descriptors_input = ks.layers.Input(**inputs[3])
+        else:
+            graph_descriptors_input = None
+            
+        # Create list of actual input tensors
+        input_tensors = [node_input, edge_input, edge_index_input]
+        if graph_descriptors_input is not None:
+            input_tensors.append(graph_descriptors_input)
+    else:
+        # Inputs are already tensors
+        input_tensors = inputs
     """
     Create a contrastive GNN model.
     
@@ -103,10 +123,14 @@ def make_contrastive_gnn_model(
         }
     
     # Input embeddings
-    n = OptionalInputEmbedding(**input_embedding["node"]) if input_embedding and "node" in input_embedding else inputs[0]
+    if input_embedding and "node" in input_embedding:
+        node_embedding_config = input_embedding["node"].copy()
+        # Use DenseEmbedding for float inputs (node attributes)
+        n = DenseEmbedding(units=node_embedding_config["output_dim"])(input_tensors[0])
+    else:
+        n = input_tensors[0]
     
     # Handle edge features - create simple constant edge features since we don't have them
-    from kgcnn.layers.modules import DenseEmbedding
     from kgcnn.layers.base import GraphBaseLayer
     
     class ConstantEdgeFeatures(GraphBaseLayer):
@@ -126,18 +150,39 @@ def make_contrastive_gnn_model(
             return edge_features
     
     # Create edge features
-    e = ConstantEdgeFeatures(units=units)(inputs[1])
-    ed = inputs[1]  # edge_indices
+    if gnn_type.lower() in ["gat", "gatv2"]:
+        # For GAT/GATv2, use actual edge attributes
+        if input_embedding and "edge" in input_embedding:
+            edge_embedding_config = input_embedding["edge"].copy()
+            # Use DenseEmbedding for float inputs (edge attributes)
+            e = DenseEmbedding(units=edge_embedding_config["output_dim"])(input_tensors[1])
+        else:
+            e = input_tensors[1]
+        ed = input_tensors[2]  # edge_indices
+    else:
+        # For other GNNs, create constant edge features
+        e = ConstantEdgeFeatures(units=units)(input_tensors[2])  # Use edge_indices for constant features
+        ed = input_tensors[2]  # edge_indices
     
     # Graph state (descriptors) - handle the case where graph_descriptors is at different positions
     graph_embedding = None
     if use_graph_state:
-        if len(inputs) > 3:
+        if len(input_tensors) > 3:
             # We have separate graph_descriptors input
-            graph_embedding = OptionalInputEmbedding(**input_embedding["graph"])(inputs[3]) if input_embedding and "graph" in input_embedding else inputs[3]
-        elif len(inputs) == 3 and "graph" in input_embedding:
+            if input_embedding and "graph" in input_embedding:
+                graph_embedding_config = input_embedding["graph"].copy()
+                # Use DenseEmbedding for float inputs (graph descriptors)
+                graph_embedding = DenseEmbedding(units=graph_embedding_config["output_dim"])(input_tensors[3])
+            else:
+                graph_embedding = input_tensors[3]
+        elif len(input_tensors) == 3 and "graph" in input_embedding:
             # Graph descriptors might be in the embedding
-            graph_embedding = OptionalInputEmbedding(**input_embedding["graph"])(inputs[2]) if input_embedding and "graph" in input_embedding else None
+            if input_embedding and "graph" in input_embedding:
+                graph_embedding_config = input_embedding["graph"].copy()
+                # Use DenseEmbedding for float inputs (graph descriptors)
+                graph_embedding = DenseEmbedding(units=graph_embedding_config["output_dim"])(input_tensors[2])
+            else:
+                graph_embedding = None
     
     # Create contrastive GNN layers based on type
     if gnn_type.lower() == "gin":
@@ -393,7 +438,7 @@ def make_contrastive_gnn_model(
         )(out)
     
     # Create model
-    model = ks.models.Model(inputs=inputs, outputs=out)
+    model = ks.models.Model(inputs=input_tensors, outputs=out)
     
     # Store contrastive layers for loss computation
     model.contrastive_layers = gnn_layers

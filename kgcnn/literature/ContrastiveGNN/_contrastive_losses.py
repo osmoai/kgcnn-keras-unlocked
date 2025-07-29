@@ -545,7 +545,7 @@ class ContrastiveGNNMetric(tf.keras.metrics.Metric):
         self.alignment_sum = self.add_weight(name="alignment_sum", initializer="zeros", dtype=tf.float32)
         self.count = self.add_weight(name="count", initializer="zeros", dtype=tf.float32)
     
-    def update_state(self, embeddings, view_embeddings=None):
+    def update_state(self, embeddings, view_embeddings=None, sample_weight=None):
         """
         Update metric statistics
         
@@ -567,14 +567,20 @@ class ContrastiveGNNMetric(tf.keras.metrics.Metric):
         
         # Compute alignment metric (if view embeddings provided)
         alignment = 0.0
-        if view_embeddings is not None and len(view_embeddings) >= 2:
-            normalized_views = [tf.nn.l2_normalize(emb, axis=1) for emb in view_embeddings]
-            view_similarities = []
-            for i in range(len(normalized_views)):
-                for j in range(i + 1, len(normalized_views)):
-                    similarity = tf.reduce_sum(normalized_views[i] * normalized_views[j], axis=1)
-                    view_similarities.append(tf.reduce_mean(similarity))
-            alignment = tf.reduce_mean(view_similarities)
+        if view_embeddings is not None:
+            # Handle both list and tensor cases
+            if isinstance(view_embeddings, (list, tuple)):
+                if len(view_embeddings) >= 2:
+                    normalized_views = [tf.nn.l2_normalize(emb, axis=1) for emb in view_embeddings]
+                    view_similarities = []
+                    for i in range(len(normalized_views)):
+                        for j in range(i + 1, len(normalized_views)):
+                            similarity = tf.reduce_sum(normalized_views[i] * normalized_views[j], axis=1)
+                            view_similarities.append(tf.reduce_mean(similarity))
+                    alignment = tf.reduce_mean(view_similarities)
+            else:
+                # view_embeddings is a tensor, skip alignment computation
+                alignment = 0.0
         
         # Update running averages
         self.similarity_sum.assign_add(avg_similarity)

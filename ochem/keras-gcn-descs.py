@@ -101,17 +101,32 @@ def RMSEmask(y_true, y_pred):
     return K.sqrt(sumsq / (num + K.epsilon()))
 
 
-def MaskedRMSE(y_true, y_pred):
-    # Simple masked RMSE metric for NaN handling
-    y_true = tf.cast(y_true, dtype=tf.float32)
-    masked = tf.where(tf.math.is_nan(y_true), 0., 1.)
-    y_true_ = tf.where(tf.math.is_nan(y_true), 0., y_true)
-    y_pred_ = tf.where(tf.math.is_nan(y_true), 0., y_pred)
+class MaskedRMSE(tf.keras.metrics.Metric):
+    def __init__(self, name='masked_rmse', **kwargs):
+        super(MaskedRMSE, self).__init__(name=name, **kwargs)
+        self.total_squared_error = self.add_weight(name='total_squared_error', initializer='zeros')
+        self.total_count = self.add_weight(name='total_count', initializer='zeros')
     
-    err = (y_true_ - y_pred_) * (y_true_ - y_pred_)
-    sumsq = K.sum(masked * err)
-    num = tf.cast(K.sum(masked), dtype=tf.float32)
-    return K.sqrt(sumsq / (num + K.epsilon()))
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        # Simple masked RMSE metric for NaN handling
+        y_true = tf.cast(y_true, dtype=tf.float32)
+        masked = tf.where(tf.math.is_nan(y_true), 0., 1.)
+        y_true_ = tf.where(tf.math.is_nan(y_true), 0., y_true)
+        y_pred_ = tf.where(tf.math.is_nan(y_true), 0., y_pred)
+        
+        err = (y_true_ - y_pred_) * (y_true_ - y_pred_)
+        sumsq = tf.reduce_sum(masked * err)
+        num = tf.cast(tf.reduce_sum(masked), dtype=tf.float32)
+        
+        self.total_squared_error.assign_add(sumsq)
+        self.total_count.assign_add(num)
+    
+    def result(self):
+        return tf.sqrt(self.total_squared_error / (self.total_count + tf.keras.backend.epsilon()))
+    
+    def reset_state(self):
+        self.total_squared_error.assign(0.)
+        self.total_count.assign(0.)
 
 
 def isClassifer(graph_labels_all):
@@ -2837,7 +2852,10 @@ elif architecture_name == 'ContrastiveGATv2':
             "use_contrastive_loss": True,
             "contrastive_loss_type": "infonce",
             "temperature": 0.1,
-            "contrastive_weight": 0.1
+            "contrastive_weight": 0.1,
+            "num_views": 2,
+            "use_diversity_loss": False,
+            "use_auxiliary_loss": False
         }
     }
     
@@ -3923,6 +3941,9 @@ if TRAIN == "True":
         elif architecture_name == 'ContrastiveGAT':
             from kgcnn.literature.GAT import make_contrastive_gat_model
             model = make_contrastive_gat_model(**hyperparam['model']["config"])
+        elif architecture_name == 'ContrastiveGATv2':
+            from kgcnn.literature.ContrastiveGNN import make_contrastive_gatv2_model
+            model = make_contrastive_gatv2_model(**hyperparam['model']["config"])
         elif architecture_name == 'ContrastiveDMPNN':
             from kgcnn.literature.DMPNN import make_contrastive_dmpnn_model
             model = make_contrastive_dmpnn_model(**hyperparam['model']["config"])
@@ -3976,19 +3997,35 @@ if TRAIN == "True":
         target_cols = [col for col in df.columns if col.lower().startswith("result")]
         if len(target_cols) == 0:
             target_cols = ["Result0"]
-        if df[target_cols].isnull().values.any():
-            print("NaNs detected in targets, using RMSEmask loss.")
-            loss_fn = RMSEmask
-            # Use masked metric for NaN handling
-            metric_fn = MaskedRMSE
+        
+        # Check if this is a classification task based on lossdef
+        is_classification = lossdef in ["BCEmask", "CCEmask", "binary_crossentropy", "categorical_crossentropy"]
+        
+        if is_classification:
+            # For classification tasks, use classification metrics regardless of NaNs
+            print("Classification task detected, using classification metrics.")
+            loss_fn = loss_function  # Use the original loss function (BCEmask)
+            metric_fn = 'accuracy'
         else:
-            print("No NaNs in targets, using standard RMSE loss.")
-            loss_fn = "mean_squared_error"
-            metric_fn = tf.keras.metrics.RootMeanSquaredError(name='root_mean_squared_error')
+            # For regression tasks, check for NaNs
+            if df[target_cols].isnull().values.any():
+                print("NaNs detected in targets, using RMSEmask loss.")
+                loss_fn = RMSEmask
+                # Use masked metric for NaN handling
+                metric_fn = MaskedRMSE()
+            else:
+                print("No NaNs in targets, using standard RMSE loss.")
+                loss_fn = "mean_squared_error"
+                metric_fn = tf.keras.metrics.RootMeanSquaredError(name='root_mean_squared_error')
     except Exception as e:
         print(f"Could not check for NaNs in targets: {e}")
-        loss_fn = "mean_squared_error"
-        metric_fn = tf.keras.metrics.RootMeanSquaredError(name='root_mean_squared_error')
+        # Default based on lossdef
+        if lossdef in ["BCEmask", "CCEmask", "binary_crossentropy", "categorical_crossentropy"]:
+            loss_fn = loss_function
+            metric_fn = 'accuracy'
+        else:
+            loss_fn = "mean_squared_error"
+            metric_fn = tf.keras.metrics.RootMeanSquaredError(name='root_mean_squared_error')
     # --- End auto-switch block ---
     
     # need to change this for class / regression
