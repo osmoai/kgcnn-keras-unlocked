@@ -33,6 +33,7 @@ from ._contrastive_losses import (
     RegressionContrastiveGNNTripletLoss,
     create_contrastive_gnn_metrics
 )
+from ._contrastive_augmentation import create_augmentation_layer
 
 
 def make_contrastive_gnn_model(
@@ -98,6 +99,8 @@ def make_contrastive_gnn_model(
             "num_views": 2,
             "use_contrastive_loss": True,
             "contrastive_loss_type": "infonce",
+            "augmentation_type": "molclr",  # Default augmentation strategy
+            "augmentation_args": {},  # Arguments for augmentation
             "temperature": 0.1,
             "use_diversity_loss": True,
             "use_auxiliary_loss": True,
@@ -339,45 +342,85 @@ def make_contrastive_gnn_model(
             # Combine view outputs
             n = tf.add_n(view_outputs) / len(view_outputs)
     
-    elif gnn_type.lower() == "dmpnn":
-        # Contrastive DMPNN implementation
+    elif gnn_type.lower() == "gin":
+        # Contrastive GIN implementation with flexible augmentation
         gnn_layers = []
+        
+        # Create augmentation layer
+        augmentation_layer = create_augmentation_layer(
+            augmentation_type=contrastive_args.get("augmentation_type", "molclr"),
+            **contrastive_args.get("augmentation_args", {})
+        )
+        
+        for i in range(depth):
+            # Single GIN layer
+            gin_mlp = MLP(
+                units=[units, units],
+                use_bias=True,
+                activation="relu"
+            )
+            
+            # Gather and aggregate
+            gather = GatherNodes()
+            aggregate = AggregateLocalEdges(pooling_method="sum")
+            
+            # Apply augmentation to create multiple views
+            view_outputs = []
+            for view_idx in range(contrastive_args["num_views"]):
+                # Apply augmentation to inputs
+                aug_inputs = augmentation_layer([n, e, ed])
+                aug_n, aug_e, aug_ed = aug_inputs
+                
+                # Process nodes with augmented inputs
+                neighbor_features = gather([aug_n, aug_ed])
+                aggregated = aggregate([aug_n, neighbor_features, aug_ed])
+                gin_output = gin_mlp(aggregated)
+                
+                view_outputs.append(gin_output)
+            
+            # Store views for contrastive loss computation
+            gnn_layers.append(view_outputs)
+            
+            # Combine view outputs (average)
+            n = tf.add_n(view_outputs) / len(view_outputs)
+    
+    elif gnn_type.lower() == "dmpnn":
+        # Contrastive DMPNN implementation using real DMPNN layers
+        from kgcnn.literature.DMPNN._dmpnn_conv import DMPNNPPoolingEdgesDirected
+        
+        gnn_layers = []
+        
+        # Make first edge hidden h0 (same for all views)
+        h_n0 = GatherNodesOutgoing()([n, ed])
+        h0 = LazyConcatenate(axis=-1)([h_n0, e])
+        h0 = Dense(**kwargs.get("edge_initialize", {"units": units, "use_bias": True, "activation": "relu"}))(h0)
+        
+        # One Dense layer for all message steps
+        edge_dense_all = Dense(**kwargs.get("edge_dense", {"units": units, "use_bias": True, "activation": "linear"}))
+        
         for i in range(depth):
             # Create multiple DMPNN views
             dmpnn_views = []
             for view_idx in range(contrastive_args["num_views"]):
-                # Edge processing
-                edge_mlp = MLP(
-                    units=[units, units],
-                    use_bias=True,
-                    activation="relu"
-                )
+                # Use real DMPNN layer
+                h = h0 if i == 0 else h  # Use h0 for first iteration
+                m_vw = DMPNNPPoolingEdgesDirected()([n, h, ed, input_tensors[3]])  # input_tensors[3] is edge_indices_reverse
+                h = edge_dense_all(m_vw)
+                h = LazyAdd()([h, h0])
+                h = Activation(**kwargs.get("edge_activation", {"activation": "relu"}))(h)
                 
-                # Node processing
-                node_mlp = MLP(
-                    units=[units, units],
-                    use_bias=True,
-                    activation="relu"
-                )
+                if kwargs.get("dropout") is not None:
+                    h = Dropout(**kwargs["dropout"])(h)
                 
-                # Gather and aggregate
-                gather_out = GatherNodesOutgoing()
-                gather_in = GatherNodesIngoing()
-                aggregate = AggregateLocalEdges(pooling_method="sum")
+                # Aggregate to nodes
+                mv = AggregateLocalEdges(**kwargs.get("pooling_args", {"pooling_method": "sum"}))([n, h, ed])
+                mv = LazyConcatenate(axis=-1)([mv, n])
+                hv = Dense(**kwargs.get("node_dense", {"units": units, "use_bias": True, "activation": "relu"}))(mv)
                 
-                # Process edges
-                edge_out = gather_out([n, ed])
-                edge_in = gather_in([n, ed])
-                edge_combined = LazyConcatenate()([edge_out, edge_in, e])
-                edge_processed = edge_mlp(edge_combined)
-                
-                # Aggregate edges
-                edge_aggregated = aggregate([n, edge_processed, ed])
-                
-                # Process nodes
-                node_processed = node_mlp(edge_aggregated)
-                
-                dmpnn_views.append(node_processed)
+                dmpnn_views.append(hv)
+            
+            # Store the DMPNN views for contrastive loss computation
+            gnn_layers.append(dmpnn_views)
             
             # Combine view outputs
             n = tf.add_n(dmpnn_views) / len(dmpnn_views)
@@ -406,6 +449,42 @@ def make_contrastive_gnn_model(
         # Apply PNA layers
         for layer in gnn_layers:
             n, _ = layer([n, ed])
+    
+    elif gnn_type.lower() == "moe":
+        # Contrastive MoE implementation
+        gnn_layers = []
+        for i in range(depth):
+            # Create multiple MoE views
+            moe_views = []
+            for view_idx in range(contrastive_args["num_views"]):
+                # Simple MoE-like layer with multiple experts
+                expert1 = MLP(units=[units, units], use_bias=True, activation="relu")
+                expert2 = MLP(units=[units, units], use_bias=True, activation="relu")
+                expert3 = MLP(units=[units, units], use_bias=True, activation="relu")
+                
+                # Gather and aggregate
+                gather = GatherNodes()
+                aggregate = AggregateLocalEdges(pooling_method="sum")
+                
+                # Process nodes
+                neighbor_features = gather([n, ed])
+                aggregated = aggregate([n, neighbor_features, ed])
+                
+                # Apply experts
+                expert1_out = expert1(aggregated)
+                expert2_out = expert2(aggregated)
+                expert3_out = expert3(aggregated)
+                
+                # Combine experts (simple averaging for now)
+                moe_output = (expert1_out + expert2_out + expert3_out) / 3.0
+                
+                moe_views.append(moe_output)
+            
+            # Store the MoE views for contrastive loss computation
+            gnn_layers.append(moe_views)
+            
+            # Combine view outputs
+            n = tf.add_n(moe_views) / len(moe_views)
     
     else:
         raise ValueError(f"Unsupported GNN type: {gnn_type}")
@@ -529,6 +608,16 @@ def make_contrastive_pna_model(inputs, input_embedding=None, **kwargs):
         inputs=inputs,
         input_embedding=input_embedding,
         gnn_type="pna",
+        **kwargs
+    )
+
+
+def make_contrastive_moe_model(inputs, input_embedding=None, **kwargs):
+    """Create a contrastive MoE model."""
+    return make_contrastive_gnn_model(
+        inputs=inputs,
+        input_embedding=input_embedding,
+        gnn_type="moe",
         **kwargs
     )
 

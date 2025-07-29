@@ -2662,7 +2662,10 @@ elif architecture_name == 'ContrastiveGIN':
             "use_contrastive_loss": True,
             "contrastive_loss_type": "infonce",
             "temperature": 0.1,
-            "contrastive_weight": 0.1
+            "contrastive_weight": 0.1,
+            "num_views": 2,
+            "use_diversity_loss": False,
+            "use_auxiliary_loss": False
         }
     }
     
@@ -2676,7 +2679,7 @@ elif architecture_name == 'ContrastiveGIN':
     hyper = {
         "model": {
             "class_name": "make_contrastive_gin_model",
-                "module_name": "kgcnn.literature.GIN",  # Use regular GIN as base
+            "module_name": "kgcnn.literature.ContrastiveGNN",  # Use ContrastiveGNN module
             "config": model_config
         },
         "training": {
@@ -2925,7 +2928,7 @@ elif architecture_name == 'ContrastiveDMPNN':
             {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-            {"shape": [None, 1], "name": "edge_pairs", "dtype": "int64", "ragged": True},
+            {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
             {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         ],
         "input_embedding": {
@@ -2968,7 +2971,10 @@ elif architecture_name == 'ContrastiveDMPNN':
             "use_contrastive_loss": True,
             "contrastive_loss_type": "infonce",
             "temperature": 0.1,
-            "contrastive_weight": 0.1
+            "contrastive_weight": 0.1,
+            "num_views": 2,
+            "use_diversity_loss": False,
+            "use_auxiliary_loss": False
         }
     }
     
@@ -2982,7 +2988,7 @@ elif architecture_name == 'ContrastiveDMPNN':
     hyper = {
         "model": {
             "class_name": "make_contrastive_dmpnn_model",
-            "module_name": "kgcnn.literature.DMPNN",  # Use regular DMPNN as base
+            "module_name": "kgcnn.literature.ContrastiveGNN",  # Use ContrastiveGNN module
             "config": model_config
         },
         "training": {
@@ -3010,7 +3016,8 @@ elif architecture_name == 'ContrastiveDMPNN':
                 "class_name": "MoleculeNetDataset",
                 "config": {},
                 "methods": [
-                    {"set_attributes": {}}
+                    {"set_attributes": {}},
+                    {"map_list": {"method": "set_edge_indices_reverse"}}
                 ]
             },
             "data_unit": "mol/L"
@@ -3058,7 +3065,10 @@ elif architecture_name == 'ContrastiveAttFP':
             "use_contrastive_loss": True,
             "contrastive_loss_type": "infonce",
             "temperature": 0.1,
-            "contrastive_weight": 0.1
+            "contrastive_weight": 0.1,
+            "num_views": 2,
+            "use_diversity_loss": False,
+            "use_auxiliary_loss": False
         }
     }
     
@@ -3071,8 +3081,8 @@ elif architecture_name == 'ContrastiveAttFP':
     
     hyper = {
         "model": {
-            "class_name": "make_contrastive_attentivefp_model",
-            "module_name": "kgcnn.literature.AttentiveFP",  # Use regular AttentiveFP as base
+            "class_name": "make_contrastive_attfp_model",
+            "module_name": "kgcnn.literature.ContrastiveGNN",  # Use ContrastiveGNN module
             "config": model_config
         },
         "training": {
@@ -3169,7 +3179,10 @@ elif architecture_name == 'ContrastiveAddGNN':
             "use_contrastive_loss": True,
             "contrastive_loss_type": "infonce",
             "temperature": 0.1,
-            "contrastive_weight": 0.1
+            "contrastive_weight": 0.1,
+            "num_views": 2,
+            "use_diversity_loss": False,
+            "use_auxiliary_loss": False
         }
     }
     
@@ -3183,7 +3196,7 @@ elif architecture_name == 'ContrastiveAddGNN':
     hyper = {
         "model": {
             "class_name": "make_contrastive_addgnn_model",
-            "module_name": "kgcnn.literature.AddGNN",  # Use regular AddGNN as base
+            "module_name": "kgcnn.literature.ContrastiveGNN",  # Use ContrastiveGNN module
             "config": model_config
         },
         "training": {
@@ -3299,7 +3312,10 @@ elif architecture_name == 'ContrastiveDGIN':
             "use_contrastive_loss": True,
             "contrastive_loss_type": "infonce",
             "temperature": 0.1,
-            "contrastive_weight": 0.1
+            "contrastive_weight": 0.1,
+            "num_views": 2,
+            "use_diversity_loss": False,
+            "use_auxiliary_loss": False
         }
     }
     
@@ -3313,7 +3329,7 @@ elif architecture_name == 'ContrastiveDGIN':
     hyper = {
         "model": {
             "class_name": "make_contrastive_dgin_model",
-            "module_name": "kgcnn.literature.DGIN",  # Use regular DGIN as base
+            "module_name": "kgcnn.literature.ContrastiveGNN",  # Use ContrastiveGNN module
             "config": model_config
         },
         "training": {
@@ -3387,7 +3403,10 @@ elif architecture_name == 'ContrastivePNA':
             "use_contrastive_loss": True,
             "contrastive_loss_type": "infonce",
             "temperature": 0.1,
-            "contrastive_weight": 0.1
+            "contrastive_weight": 0.1,
+            "num_views": 2,
+            "use_diversity_loss": False,
+            "use_auxiliary_loss": False
         }
     }
     
@@ -3401,7 +3420,7 @@ elif architecture_name == 'ContrastivePNA':
     hyper = {
         "model": {
             "class_name": "make_contrastive_pna_model",
-            "module_name": "kgcnn.literature.PNA",  # Use our fixed PNA as base
+            "module_name": "kgcnn.literature.ContrastiveGNN",  # Use ContrastiveGNN module
             "config": model_config
         },
         "training": {
@@ -3486,6 +3505,9 @@ elif architecture_name == 'ContrastiveMoE':
             "contrastive_loss_type": "infonce",
             "temperature": 0.1,
             "contrastive_weight": 0.1,
+            "num_views": 2,
+            "use_diversity_loss": False,
+            "use_auxiliary_loss": False,
             "expert_diversity_weight": 0.05,  # Encourage expert diversity
             "routing_entropy_weight": 0.01,    # Encourage balanced routing
             "use_expert_contrastive": True,    # Apply contrastive learning to experts
@@ -3503,7 +3525,7 @@ elif architecture_name == 'ContrastiveMoE':
     hyper = {
         "model": {
             "class_name": "make_contrastive_moe_model",
-            "module_name": "kgcnn.literature.MultiGraphMoE",  # Use MultiGraphMoE as base
+            "module_name": "kgcnn.literature.ContrastiveGNN",  # Use ContrastiveGNN module
             "config": model_config
         },
         "training": {
@@ -4033,25 +4055,21 @@ if TRAIN == "True":
     
     # need to change this for class / regression
     if architecture_name.startswith('Contrastive'):
-        if architecture_name in ['ContrastiveGIN', 'ContrastiveDMPNN', 'ContrastiveAttFP', 'ContrastiveAddGNN', 'ContrastiveDGIN', 'ContrastivePNA', 'ContrastiveMoE', 'MoE', 'ConfigurableMoE']:
-            # Our Contrastive models are already compiled with their custom loss
-            print(f"{architecture_name} model already compiled with custom contrastive loss - skipping recompilation")
-        else:
-            # Use special compilation for other contrastive models
-            from kgcnn.literature.ContrastiveGNN import compile_contrastive_gnn_model
-            compile_contrastive_gnn_model(
-                model=model,
-                optimizer=opt,
-                learning_rate=cfg_learning_rate,
-                loss=loss_function,
-                metrics=['accuracy'] if lossdef in ["BCEmask", "CCEmask", "binary_crossentropy", "categorical_crossentropy"] else [metric_fn],
-                contrastive_weight=hyperparam['training']['compile'].get('contrastive_weight', 0.1),
-                diversity_weight=hyperparam['training']['compile'].get('diversity_weight', 0.01),
-                alignment_weight=hyperparam['training']['compile'].get('alignment_weight', 0.01),
-                use_regression_aware=hyperparam['training']['compile'].get('use_regression_aware', False),
-                target_similarity_threshold=hyperparam['training']['compile'].get('target_similarity_threshold', 0.1),
-                similarity_metric=hyperparam['training']['compile'].get('similarity_metric', 'euclidean')
-            )
+        # Use special compilation for all contrastive models
+        from kgcnn.literature.ContrastiveGNN import compile_contrastive_gnn_model
+        compile_contrastive_gnn_model(
+            model=model,
+            optimizer=opt,
+            learning_rate=cfg_learning_rate,
+            loss=loss_function,
+            metrics=['accuracy'] if lossdef in ["BCEmask", "CCEmask", "binary_crossentropy", "categorical_crossentropy"] else [metric_fn],
+            contrastive_weight=hyperparam['training']['compile'].get('contrastive_weight', 0.1),
+            diversity_weight=hyperparam['training']['compile'].get('diversity_weight', 0.01),
+            alignment_weight=hyperparam['training']['compile'].get('alignment_weight', 0.01),
+            use_regression_aware=hyperparam['training']['compile'].get('use_regression_aware', False),
+            target_similarity_threshold=hyperparam['training']['compile'].get('target_similarity_threshold', 0.1),
+            similarity_metric=hyperparam['training']['compile'].get('similarity_metric', 'euclidean')
+        )
     else:
         # Use appropriate metrics based on loss function
         if lossdef in ["BCEmask", "CCEmask", "binary_crossentropy", "categorical_crossentropy"]:
