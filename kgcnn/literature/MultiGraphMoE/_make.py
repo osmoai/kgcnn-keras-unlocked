@@ -93,21 +93,21 @@ def make_model(inputs: list = None,
     edge_input = ks.layers.Input(**inputs[1])
     edge_index_input = ks.layers.Input(**inputs[2])
     
-    # Handle graph_desc input if provided (for descriptors)
+    # Handle graph_descriptors input if provided (for descriptors)
     if len(inputs) > 3:
-        graph_desc_input = ks.layers.Input(**inputs[3])
+        graph_descriptors_input = ks.layers.Input(**inputs[3])
     else:
-        graph_desc_input = None
+        graph_descriptors_input = None
     
     # Embedding
     n = OptionalInputEmbedding(**input_embedding["node"])(node_input)
     e = OptionalInputEmbedding(**input_embedding["edge"])(edge_input)
     
     # Graph state embedding if provided
-    if use_graph_state and graph_desc_input is not None:
+    if use_graph_state and graph_descriptors_input is not None:
         graph_embedding = OptionalInputEmbedding(
             **input_embedding.get("graph", {"input_dim": 100, "output_dim": 64})
-        )(graph_desc_input)
+        )(graph_descriptors_input)
     else:
         graph_embedding = None
     
@@ -147,7 +147,7 @@ def make_model(inputs: list = None,
     
     # Model
     model = ks.Model(inputs=[node_input, edge_input, edge_index_input] + 
-                    ([graph_desc_input] if graph_desc_input is not None else []),
+                    ([graph_descriptors_input] if graph_descriptors_input is not None else []),
                     outputs=out, name=name)
     
     return model 

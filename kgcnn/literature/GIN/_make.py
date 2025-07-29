@@ -85,15 +85,15 @@ def make_model(inputs: list = None,
     # GIN: [node_attributes, edge_indices, (optional) graph_descriptors]
     node_input = ks.layers.Input(**inputs[0])
     edge_index_input = ks.layers.Input(**inputs[1])
-    graph_desc_input = ks.layers.Input(**inputs[2]) if len(inputs) > 2 else None
+    graph_descriptors_input = ks.layers.Input(**inputs[2]) if len(inputs) > 2 else None
 
     n = OptionalInputEmbedding(**input_embedding['node'],
                                use_embedding=len(inputs[0]['shape']) < 2)(node_input)
-    graph_desc = None
-    if graph_desc_input is not None and "graph" in input_embedding:
-        graph_desc = OptionalInputEmbedding(
+    graph_descriptors = None
+    if graph_descriptors_input is not None and "graph" in input_embedding:
+        graph_descriptors = OptionalInputEmbedding(
             **input_embedding["graph"],
-            use_embedding=len(inputs[2]["shape"]) < 1)(graph_desc_input)
+            use_embedding=len(inputs[2]["shape"]) < 1)(graph_descriptors_input)
     edi = edge_index_input
     n_units = gin_mlp["units"][-1] if isinstance(gin_mlp["units"], list) else int(gin_mlp["units"])
     n = Dense(n_units, use_bias=True, activation='linear')(n)
@@ -107,22 +107,22 @@ def make_model(inputs: list = None,
         out = [MLP(**last_mlp)(x) for x in out]
         out = [ks.layers.Dropout(dropout)(x) for x in out]
         out = ks.layers.Add()(out)
-        if graph_desc is not None:
-            out = ks.layers.Concatenate()([graph_desc, out])
+        if graph_descriptors is not None:
+            out = ks.layers.Concatenate()([graph_descriptors, out])
         out = MLP(**output_mlp)(out)
     elif output_embedding == "node":
         out = n
         out = GraphMLP(**last_mlp)(out)
-        if graph_desc is not None:
-            graph_state_node = GatherState()([graph_desc, out])
+        if graph_descriptors is not None:
+            graph_state_node = GatherState()([graph_descriptors, out])
             out = LazyConcatenate()([out, graph_state_node])
         out = GraphMLP(**output_mlp)(out)
         if output_to_tensor:
             out = ChangeTensorType(input_tensor_type='ragged', output_tensor_type="tensor")(out)
     else:
         raise ValueError("Unsupported output embedding for mode `GIN`")
-    if graph_desc_input is not None:
-        model = ks.models.Model(inputs=[node_input, edge_index_input, graph_desc_input], outputs=out, name=name)
+    if graph_descriptors_input is not None:
+        model = ks.models.Model(inputs=[node_input, edge_index_input, graph_descriptors_input], outputs=out, name=name)
     else:
         model = ks.models.Model(inputs=[node_input, edge_index_input], outputs=out, name=name)
     model.__kgcnn_model_version__ = __model_version__
@@ -201,17 +201,17 @@ def make_model_edge(inputs: list = None,
     node_input = ks.layers.Input(**inputs[0])
     edge_input = ks.layers.Input(**inputs[1])
     edge_index_input = ks.layers.Input(**inputs[2])
-    graph_desc_input = ks.layers.Input(**inputs[3]) if len(inputs) > 3 else None
+    graph_descriptors_input = ks.layers.Input(**inputs[3]) if len(inputs) > 3 else None
 
     n = OptionalInputEmbedding(**input_embedding['node'],
                                use_embedding=len(inputs[0]['shape']) < 2)(node_input)
     ed = OptionalInputEmbedding(**input_embedding['edge'],
                                 use_embedding=len(inputs[1]['shape']) < 2)(edge_input)
-    graph_desc = None
-    if graph_desc_input is not None and "graph" in input_embedding:
-        graph_desc = OptionalInputEmbedding(
+    graph_descriptors = None
+    if graph_descriptors_input is not None and "graph" in input_embedding:
+        graph_descriptors = OptionalInputEmbedding(
             **input_embedding["graph"],
-            use_embedding=len(inputs[3]["shape"]) < 1)(graph_desc_input)
+            use_embedding=len(inputs[3]["shape"]) < 1)(graph_descriptors_input)
     edi = edge_index_input
     n_units = gin_mlp["units"][-1] if isinstance(gin_mlp["units"], list) else int(gin_mlp["units"])
     n = Dense(n_units, use_bias=True, activation='linear')(n)
@@ -226,22 +226,22 @@ def make_model_edge(inputs: list = None,
         out = [MLP(**last_mlp)(x) for x in out]
         out = [ks.layers.Dropout(dropout)(x) for x in out]
         out = ks.layers.Add()(out)
-        if graph_desc is not None:
-            out = ks.layers.Concatenate()([graph_desc, out])
+        if graph_descriptors is not None:
+            out = ks.layers.Concatenate()([graph_descriptors, out])
         out = MLP(**output_mlp)(out)
     elif output_embedding == "node":
         out = n
         out = GraphMLP(**last_mlp)(out)
-        if graph_desc is not None:
-            graph_state_node = GatherState()([graph_desc, out])
+        if graph_descriptors is not None:
+            graph_state_node = GatherState()([graph_descriptors, out])
             out = LazyConcatenate()([out, graph_state_node])
         out = GraphMLP(**output_mlp)(out)
         if output_to_tensor:
             out = ChangeTensorType(input_tensor_type='ragged', output_tensor_type="tensor")(out)
     else:
         raise ValueError("Unsupported output embedding for mode `GIN`")
-    if graph_desc_input is not None:
-        model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input, graph_desc_input], outputs=out, name=name)
+    if graph_descriptors_input is not None:
+        model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input, graph_descriptors_input], outputs=out, name=name)
     else:
         model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input], outputs=out, name=name)
     model.__kgcnn_model_version__ = __model_version__

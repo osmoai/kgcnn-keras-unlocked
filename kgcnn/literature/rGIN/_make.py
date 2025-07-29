@@ -84,22 +84,22 @@ def make_model(inputs: list = None,
     node_input = ks.layers.Input(**inputs[0])
     edge_index_input = ks.layers.Input(**inputs[1])
     
-    # Handle graph_desc input if provided (for descriptors)
+    # Handle graph_descriptors input if provided (for descriptors)
     if len(inputs) > 2:
-        graph_desc_input = ks.layers.Input(**inputs[2])
+        graph_descriptors_input = ks.layers.Input(**inputs[2])
     else:
-        graph_desc_input = None
+        graph_descriptors_input = None
 
     # Embedding, if no feature dimension
     n = OptionalInputEmbedding(**input_embedding['node'],
                                use_embedding=len(inputs[0]['shape']) < 2)(node_input)
-    # Embed graph_desc if provided
-    if graph_desc_input is not None and "graph" in input_embedding:
-        graph_desc = OptionalInputEmbedding(
+    # Embed graph_descriptors if provided
+    if graph_descriptors_input is not None and "graph" in input_embedding:
+        graph_descriptors = OptionalInputEmbedding(
             **input_embedding["graph"],
-            use_embedding=len(inputs[2]["shape"]) < 1)(graph_desc_input)
+            use_embedding=len(inputs[2]["shape"]) < 1)(graph_descriptors_input)
     else:
-        graph_desc = None
+        graph_descriptors = None
 
     edi = edge_index_input
 
@@ -119,14 +119,14 @@ def make_model(inputs: list = None,
         out = [MLP(**last_mlp)(x) for x in out]
         out = [ks.layers.Dropout(dropout)(x) for x in out]
         out = ks.layers.Add()(out)
-        if graph_desc is not None:
-            out = ks.layers.Concatenate()([graph_desc, out])
+        if graph_descriptors is not None:
+            out = ks.layers.Concatenate()([graph_descriptors, out])
         out = MLP(**output_mlp)(out)
     elif output_embedding == "node":  # Node labeling
         out = n
         out = GraphMLP(**last_mlp)(out)
-        if graph_desc is not None:
-            graph_state_node = GatherState()([graph_desc, out])
+        if graph_descriptors is not None:
+            graph_state_node = GatherState()([graph_descriptors, out])
             out = LazyConcatenate()([out, graph_state_node])
         out = GraphMLP(**output_mlp)(out)
         if output_to_tensor:  # For tf version < 2.8 cast to tensor below.
@@ -134,8 +134,8 @@ def make_model(inputs: list = None,
     else:
         raise ValueError("Unsupported output embedding for mode `rGIN`")
 
-    if graph_desc_input is not None:
-        model = ks.models.Model(inputs=[node_input, edge_index_input, graph_desc_input],
+    if graph_descriptors_input is not None:
+        model = ks.models.Model(inputs=[node_input, edge_index_input, graph_descriptors_input],
             outputs=out, name=name)
     else:
         model = ks.models.Model(inputs=[node_input, edge_index_input], 

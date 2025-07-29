@@ -144,7 +144,7 @@ model = make_model(
         {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
         {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
         {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-        {"shape": [3], "name": "graph_desc", "dtype": "float32", "ragged": False}
+        {"shape": [3], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
     ],
     dhtnn_args={
         "units": 128,

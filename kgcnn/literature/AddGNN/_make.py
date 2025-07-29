@@ -120,7 +120,7 @@ def make_model(inputs: list = None,
     node_input = ks.layers.Input(**inputs[0])
     edge_input = ks.layers.Input(**inputs[1])  # Or coordinates
     edge_index_input = ks.layers.Input(**inputs[2])
-    graph_desc_input = ks.layers.Input(**inputs[3]) if len(inputs) > 3 else None
+    graph_descriptors_input = ks.layers.Input(**inputs[3]) if len(inputs) > 3 else None
 
     edi = edge_index_input
 
@@ -131,13 +131,13 @@ def make_model(inputs: list = None,
     else:
         ed = edge_input
 
-    # Embed graph_desc if provided
-    if graph_desc_input is not None and "graph" in input_embedding:
-        graph_desc = OptionalInputEmbedding(
+    # Embed graph_descriptors if provided
+    if graph_descriptors_input is not None and "graph" in input_embedding:
+        graph_descriptors = OptionalInputEmbedding(
             **input_embedding["graph"],
-            use_embedding=len(inputs[3]["shape"]) < 1)(graph_desc_input)
+            use_embedding=len(inputs[3]["shape"]) < 1)(graph_descriptors_input)
     else:
-        graph_desc = None
+        graph_descriptors = None
 
     # If coordinates are in place of edges
     if make_distance:
@@ -165,12 +165,12 @@ def make_model(inputs: list = None,
         else:
             out = PoolingNodes(**pooling_args)(n)
         out = ks.layers.Flatten()(out)  # Flatten() required for to Set2Set output.
-        if graph_desc is not None:
-            out = ks.layers.Concatenate()([graph_desc, out])
+        if graph_descriptors is not None:
+            out = ks.layers.Concatenate()([graph_descriptors, out])
         out = MLP(**output_mlp)(out)
     elif output_embedding == 'node':
-        if graph_desc is not None:
-            graph_state_node = GatherState()([graph_desc, n])
+        if graph_descriptors is not None:
+            graph_state_node = GatherState()([graph_descriptors, n])
             n = LazyConcatenate()([n, graph_state_node])
         out = GraphMLP(**output_mlp)(n)
         if output_to_tensor:  # For tf version < 2.8 cast to tensor below.
@@ -178,9 +178,9 @@ def make_model(inputs: list = None,
     else:
         raise ValueError("Unsupported output embedding for mode `AddGNN`")
 
-    if graph_desc_input is not None:
+    if graph_descriptors_input is not None:
         model = ks.models.Model(
-            inputs=[node_input, edge_input, edge_index_input, graph_desc_input],
+            inputs=[node_input, edge_input, edge_index_input, graph_descriptors_input],
             outputs=out, name=name)
     else:
         model = ks.models.Model(
@@ -239,9 +239,9 @@ def make_crystal_model(inputs: list = None,
     Default parameters can be found in :obj:`kgcnn.literature.AddGNN.model_crystal_default`.
 
     Inputs:
-        list: `[node_attributes, edge_attributes, edge_indices, edge_image, lattice, graph_desc]`
-        or `[node_attributes, edge_distance, edge_indices, edge_image, lattice, graph_desc]` if :obj:`geometric_edge=True`
-        or `[node_attributes, node_coordinates, edge_indices, edge_image, lattice, graph_desc]` if :obj:`make_distance=True` and
+        list: `[node_attributes, edge_attributes, edge_indices, edge_image, lattice, graph_descriptors]`
+        or `[node_attributes, edge_distance, edge_indices, edge_image, lattice, graph_descriptors]` if :obj:`geometric_edge=True`
+        or `[node_attributes, node_coordinates, edge_indices, edge_image, lattice, graph_descriptors]` if :obj:`make_distance=True` and
         :obj:`expand_distance=True` to compute edge distances from node coordinates within the model.
 
             - node_attributes (tf.RaggedTensor): Node attributes of shape `(batch, None, F)` or `(batch, None)`
@@ -256,7 +256,7 @@ def make_crystal_model(inputs: list = None,
             - lattice (tf.Tensor): Lattice matrix of the periodic structure of shape `(batch, 3, 3)`.
             - edge_image (tf.RaggedTensor): Indices of the periodic image the sending node is located. The indices
                 of and edge are :math:`(i, j)` with :math:`j` being the sending node.
-            - graph_desc (tf.Tensor): Graph-level descriptors of shape `(batch, D)`.
+            - graph_descriptors (tf.Tensor): Graph-level descriptors of shape `(batch, D)`.
 
     Outputs:
         tf.Tensor: Graph embeddings of shape `(batch, L)` if :obj:`output_embedding="graph"`.
@@ -292,7 +292,7 @@ def make_crystal_model(inputs: list = None,
     edge_index_input = ks.layers.Input(**inputs[2])
     edge_image = ks.layers.Input(**inputs[3])
     lattice = ks.layers.Input(**inputs[4])
-    graph_desc_input = ks.layers.Input(**inputs[5]) if len(inputs) > 5 else None
+    graph_descriptors_input = ks.layers.Input(**inputs[5]) if len(inputs) > 5 else None
 
     edi = edge_index_input
 
@@ -303,13 +303,13 @@ def make_crystal_model(inputs: list = None,
     else:
         ed = edge_input
 
-    # Embed graph_desc if provided
-    if graph_desc_input is not None and "graph" in input_embedding:
-        graph_desc = OptionalInputEmbedding(
+    # Embed graph_descriptors if provided
+    if graph_descriptors_input is not None and "graph" in input_embedding:
+        graph_descriptors = OptionalInputEmbedding(
             **input_embedding["graph"],
-            use_embedding=len(inputs[5]["shape"]) < 1)(graph_desc_input)
+            use_embedding=len(inputs[5]["shape"]) < 1)(graph_descriptors_input)
     else:
-        graph_desc = None
+        graph_descriptors = None
 
     # If coordinates are in place of edges
     if make_distance:
@@ -339,12 +339,12 @@ def make_crystal_model(inputs: list = None,
         else:
             out = PoolingNodes(**pooling_args)(n)
         out = ks.layers.Flatten()(out)  # Flatten() required for to Set2Set output.
-        if graph_desc is not None:
-            out = ks.layers.Concatenate()([graph_desc, out])
+        if graph_descriptors is not None:
+            out = ks.layers.Concatenate()([graph_descriptors, out])
         out = MLP(**output_mlp)(out)
     elif output_embedding == 'node':
-        if graph_desc is not None:
-            graph_state_node = GatherState()([graph_desc, n])
+        if graph_descriptors is not None:
+            graph_state_node = GatherState()([graph_descriptors, n])
             n = LazyConcatenate()([n, graph_state_node])
         out = GraphMLP(**output_mlp)(n)
         if output_to_tensor:  # For tf version < 2.8 cast to tensor below.
@@ -352,9 +352,9 @@ def make_crystal_model(inputs: list = None,
     else:
         raise ValueError("Unsupported output embedding for mode `AddGNN`")
 
-    if graph_desc_input is not None:
+    if graph_descriptors_input is not None:
         model = ks.models.Model(
-            inputs=[node_input, edge_input, edge_index_input, edge_image, lattice, graph_desc_input],
+            inputs=[node_input, edge_input, edge_index_input, edge_image, lattice, graph_descriptors_input],
             outputs=out, name=name)
     else:
         model = ks.models.Model(

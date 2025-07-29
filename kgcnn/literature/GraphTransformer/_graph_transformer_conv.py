@@ -353,12 +353,12 @@ class GraphTransformerLayer(GraphBaseLayer):
         """Forward pass of Graph Transformer layer.
         
         Args:
-            inputs: List of [node_features, edge_features, edge_indices, positional_encoding, graph_desc]
+            inputs: List of [node_features, edge_features, edge_indices, positional_encoding, graph_descriptors]
                 - node_features: Node feature matrix [N, F] (ragged)
                 - edge_features: Edge feature matrix [E, F_e] (ragged)
                 - edge_indices: Edge index matrix [E, 2] (ragged)
                 - positional_encoding: Positional encoding [N, P] (ragged, optional)
-                - graph_desc: Graph descriptor features [G] (optional)
+                - graph_descriptors: Graph descriptor features [G] (optional)
                 
         Returns:
             Updated node features [N, units] (ragged)
@@ -367,16 +367,16 @@ class GraphTransformerLayer(GraphBaseLayer):
         edge_features = inputs[1] if len(inputs) > 1 else None
         edge_indices = inputs[2] if len(inputs) > 2 else None
         positional_encoding = inputs[3] if len(inputs) > 3 else None
-        graph_desc = inputs[4] if len(inputs) > 4 else None
+        graph_descriptors = inputs[4] if len(inputs) > 4 else None
         
         # Incorporate graph descriptors into node features if provided
-        if graph_desc is not None:
+        if graph_descriptors is not None:
             # Use GatherState to properly distribute graph descriptors to nodes
             from kgcnn.layers.gather import GatherState
             from kgcnn.layers.modules import LazyConcatenate
             
             # Gather graph state for each node
-            graph_state_node = GatherState()([graph_desc, node_features])
+            graph_state_node = GatherState()([graph_descriptors, node_features])
             
             # Add graph descriptors to node features
             node_features = LazyConcatenate(axis=-1)([node_features, graph_state_node])

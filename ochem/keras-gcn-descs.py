@@ -566,7 +566,7 @@ if architecture_name == 'GCN':
     # Add descriptor input if using descriptors
     if use_descriptors and descs:
         hyper["model"]["config"]["inputs"].append(
-            {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         )
         hyper["model"]["config"]["use_graph_state"] = True
         print(f"Added descriptor input with dimension {desc_dim} to GCN")
@@ -638,7 +638,7 @@ elif architecture_name == 'GAT':
     # Add descriptor input if using descriptors
     if use_descriptors and descs:
         hyper["model"]["config"]["inputs"].append(
-            {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         )
         hyper["model"]["config"]["use_graph_state"] = True
         print(f"Added descriptor input with dimension {desc_dim} to GAT")
@@ -703,7 +703,7 @@ elif architecture_name == 'GATv2':
     # Add descriptor input if using descriptors
     if use_descriptors and descs:
         hyper["model"]["config"]["inputs"].append(
-            {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         )
         hyper["model"]["config"]["use_graph_state"] = True
         print(f"Added descriptor input with dimension {desc_dim} to GATv2")
@@ -837,9 +837,9 @@ elif architecture_name in ['AttFP', 'AttentiveFP']:
     # Add descriptor input if using descriptors
     if use_descriptors and descs:
         input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if 'graph_desc' not in input_names:
+        if 'graph_descriptors' not in input_names:
             hyper["model"]["config"]["inputs"].append(
-                {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
             )
             print(f"Added descriptor input with dimension {desc_dim} to AttentiveFP")
         hyper["model"]["config"]["use_graph_state"] = True
@@ -850,18 +850,18 @@ elif architecture_name in ['AttFP', 'AttentiveFP']:
         if 'use_graph_state' in hyper["model"]["config"].keys():
             print(hyper["model"]["config"]['use_graph_state'])
             hyper["model"]["config"]['use_graph_state']=True
-            # Check if graph_desc is already in inputs to avoid duplicates
+            # Check if graph_descriptors is already in inputs to avoid duplicates
             input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-            if 'graph_desc' not in input_names:
-                hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False})
+            if 'graph_descriptors' not in input_names:
+                hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False})
             if 'input_embedding' in hyper["model"]["config"] and 'graph' not in hyper["model"]["config"]["input_embedding"]:
                 hyper["model"]["config"]["input_embedding"]["graph"] = {"input_dim": 100, "output_dim": 64}
         else:
             print('Model does not support use_graph_state, adding descriptor input manually')
             # Add descriptor input manually for models that don't have use_graph_state
             input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-            if 'graph_desc' not in input_names:
-                hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False})
+            if 'graph_descriptors' not in input_names:
+                hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False})
             # Add graph embedding to input_embedding if it doesn't exist
             if 'input_embedding' in hyper["model"]["config"] and 'graph' not in hyper["model"]["config"]["input_embedding"]:
                 hyper["model"]["config"]["input_embedding"]["graph"] = {"input_dim": 100, "output_dim": 64}
@@ -932,9 +932,9 @@ elif architecture_name == 'CoAttentiveFP':
     # Add descriptor input if using descriptors
     if use_descriptors and descs:
         input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if 'graph_desc' not in input_names:
+        if 'graph_descriptors' not in input_names:
             hyper["model"]["config"]["inputs"].append(
-                {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
             )
             print(f"Added descriptor input with dimension {desc_dim} to CoAttentiveFP")
         hyper["model"]["config"]["use_graph_state"] = True
@@ -1006,9 +1006,9 @@ elif architecture_name == 'AttentiveFPPlus':
     # Add descriptor input if using descriptors
     if use_descriptors and descs:
         input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if 'graph_desc' not in input_names:
+        if 'graph_descriptors' not in input_names:
             hyper["model"]["config"]["inputs"].append(
-                {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
             )
             print(f"Added descriptor input with dimension {desc_dim} to AttentiveFPPlus")
         hyper["model"]["config"]["use_graph_state"] = True
@@ -1082,9 +1082,9 @@ elif architecture_name == 'CMPNNPlus':
     # Add descriptor input if using descriptors
     if use_descriptors and descs:
         input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if 'graph_desc' not in input_names:
+        if 'graph_descriptors' not in input_names:
             hyper["model"]["config"]["inputs"].append(
-                {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
             )
             print(f"Added descriptor input with dimension {desc_dim} to CMPNNPlus")
         hyper["model"]["config"]["use_graph_state"] = True
@@ -1158,9 +1158,9 @@ elif architecture_name == 'DMPNNAttention':
     # Add descriptor input if using descriptors
     if use_descriptors and descs:
         input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if 'graph_desc' not in input_names:
+        if 'graph_descriptors' not in input_names:
             hyper["model"]["config"]["inputs"].append(
-                {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
             )
             print(f"Added descriptor input with dimension {desc_dim} to DMPNNAttention")
         hyper["model"]["config"]["use_graph_state"] = True
@@ -1329,7 +1329,7 @@ elif architecture_name == 'AddGNN':
             {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-            {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         ],
         "input_embedding": {
             "node": {"input_dim": 95, "output_dim": 200},
@@ -1404,7 +1404,7 @@ elif architecture_name == 'GraphTransformer':
             {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-            {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         ],
         "input_embedding": {
             "node": {"input_dim": 95, "output_dim": 200},
@@ -1491,7 +1491,7 @@ elif architecture_name in ['ChemProp', 'DMPNN']:
         {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True}
     ]
     
-    # Add descriptor input if enabled - support both state_attributes and graph_desc names
+    # Add descriptor input if enabled - support both state_attributes and graph_descriptors names
     if descs:
         # Use state_attributes as the primary name (DMPNN native)
         dmpnn_inputs.append({"shape": [desc_dim], "name": "state_attributes", "dtype": "float32", "ragged": False})
@@ -1644,7 +1644,7 @@ elif architecture_name == 'rGIN':
         "name": "rGIN",
         "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
                    {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-                   {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}],
+                   {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}],
         "input_embedding": {"node": {"input_dim": 96, "output_dim": 100},
                             "edge": {"input_dim": 5, "output_dim": 100},
                             "graph": {"input_dim": 100, "output_dim": 64}},
@@ -1711,7 +1711,7 @@ elif architecture_name == 'rGINE':
         "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
                    {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
                    {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-                   {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}],
+                   {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}],
         "input_embedding": {"node": {"input_dim": 96, "output_dim": 100},
                             "edge": {"input_dim": 5, "output_dim": 100},
                             "graph": {"input_dim": 100, "output_dim": 64}},
@@ -1779,7 +1779,7 @@ elif architecture_name == 'GIN':
         "name": "GIN",
         "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
                    {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-                   {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}],
+                   {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}],
         "input_embedding": {"node": {"input_dim": 96, "output_dim": 100},
                             "edge": {"input_dim": 5, "output_dim": 100},
                             "graph": {"input_dim": 100, "output_dim": 64}},
@@ -1841,7 +1841,7 @@ elif architecture_name == 'GINE':
         "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
                    {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
                    {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-                   {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}],
+                   {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}],
         "input_embedding": {"node": {"input_dim": 96, "output_dim": 100},
                             "edge": {"input_dim": 5, "output_dim": 100},
                             "graph": {"input_dim": 100, "output_dim": 64}},
@@ -1906,7 +1906,7 @@ elif architecture_name == 'GraphGPS':
             {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-            {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         ],
         "input_embedding": {
             "node": {"input_dim": 95, "output_dim": 200},
@@ -2000,7 +2000,7 @@ elif architecture_name == 'PNA':
                 "inputs": [
                     {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
                     {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
                 ],
                 "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
                                     "graph": {"input_dim": 100, "output_dim": 64}},
@@ -2055,9 +2055,9 @@ elif architecture_name == 'PNA':
     }
     if use_descriptors and descs:
         input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if 'graph_desc' not in input_names:
+        if 'graph_descriptors' not in input_names:
             hyper["model"]["config"]["inputs"].append(
-                {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
             )
             print(f"Added descriptor input with dimension {desc_dim} to PNA")
         hyper["model"]["config"]["use_graph_state"] = True
@@ -2073,7 +2073,7 @@ elif architecture_name == 'ExpC':
                 "inputs": [
                     {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
                     {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
                 ],
                 "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
                                     "graph": {"input_dim": 100, "output_dim": 64}},
@@ -2127,9 +2127,9 @@ elif architecture_name == 'ExpC':
     }
     if use_descriptors and descs:
         input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if 'graph_desc' not in input_names:
+        if 'graph_descriptors' not in input_names:
             hyper["model"]["config"]["inputs"].append(
-                {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
             )
             print(f"Added descriptor input with dimension {desc_dim} to ExpC")
         hyper["model"]["config"]["use_graph_state"] = True
@@ -2146,7 +2146,7 @@ elif architecture_name == 'EGAT':
                     {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
                     {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
                     {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
                 ],
                 "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
                                     "edge": {"input_dim": 5, "output_dim": 128},
@@ -2201,9 +2201,9 @@ elif architecture_name == 'EGAT':
     }
     if use_descriptors and descs:
         input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if 'graph_desc' not in input_names:
+        if 'graph_descriptors' not in input_names:
             hyper["model"]["config"]["inputs"].append(
-                {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
             )
             print(f"Added descriptor input with dimension {desc_dim} to EGAT")
         hyper["model"]["config"]["use_graph_state"] = True
@@ -2220,7 +2220,7 @@ elif architecture_name == 'TransformerGAT':
                     {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
                     {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
                     {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
                 ],
                 "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
                                     "edge": {"input_dim": 5, "output_dim": 128},
@@ -2275,9 +2275,9 @@ elif architecture_name == 'TransformerGAT':
     }
     if use_descriptors and descs:
         input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if 'graph_desc' not in input_names:
+        if 'graph_descriptors' not in input_names:
             hyper["model"]["config"]["inputs"].append(
-                {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
             )
             print(f"Added descriptor input with dimension {desc_dim} to TransformerGAT")
         hyper["model"]["config"]["use_graph_state"] = True
@@ -2294,7 +2294,7 @@ elif architecture_name == 'GRPE':
                     {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
                     {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
                     {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
                 ],
                 "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
                                     "edge": {"input_dim": 5, "output_dim": 128},
@@ -2349,9 +2349,9 @@ elif architecture_name == 'GRPE':
     }
     if use_descriptors and descs:
         input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if 'graph_desc' not in input_names:
+        if 'graph_descriptors' not in input_names:
             hyper["model"]["config"]["inputs"].append(
-                {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
             )
             print(f"Added descriptor input with dimension {desc_dim} to GRPE")
         hyper["model"]["config"]["use_graph_state"] = True
@@ -2368,7 +2368,7 @@ elif architecture_name == 'KAGAT':
                     {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
                     {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
                     {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
                 ],
                 "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
                                     "edge": {"input_dim": 5, "output_dim": 128},
@@ -2426,9 +2426,9 @@ elif architecture_name == 'KAGAT':
     }
     if use_descriptors and descs:
         input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if 'graph_desc' not in input_names:
+        if 'graph_descriptors' not in input_names:
             hyper["model"]["config"]["inputs"].append(
-                {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
             )
             print(f"Added descriptor input with dimension {desc_dim} to KAGAT")
         hyper["model"]["config"]["use_graph_state"] = True
@@ -2445,7 +2445,7 @@ elif architecture_name == 'DHTNN':
                     {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
                     {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
                     {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
                 ],
                 "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
                                     "edge": {"input_dim": 5, "output_dim": 128},
@@ -2503,9 +2503,9 @@ elif architecture_name == 'DHTNN':
     }
     if use_descriptors and descs:
         input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if 'graph_desc' not in input_names:
+        if 'graph_descriptors' not in input_names:
             hyper["model"]["config"]["inputs"].append(
-                {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
             )
             print(f"Added descriptor input with dimension {desc_dim} to DHTNN")
         hyper["model"]["config"]["use_graph_state"] = True
@@ -2522,7 +2522,7 @@ elif architecture_name == 'DHTNNPlus':
                     {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
                     {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
                     {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
                 ],
                 "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
                                     "edge": {"input_dim": 5, "output_dim": 128},
@@ -2581,9 +2581,9 @@ elif architecture_name == 'DHTNNPlus':
     }
     if use_descriptors and descs:
         input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if 'graph_desc' not in input_names:
+        if 'graph_descriptors' not in input_names:
             hyper["model"]["config"]["inputs"].append(
-                {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
             )
             print(f"Added descriptor input with dimension {desc_dim} to DHTNNPlus")
         hyper["model"]["config"]["use_graph_state"] = True
@@ -2598,7 +2598,7 @@ elif architecture_name == 'ContrastiveGIN':
         "inputs": [
             {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-            {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         ],
         "input_embedding": {
             "node": {"input_dim": 95, "output_dim": 128},
@@ -2736,7 +2736,7 @@ if TRAIN == "True":
                     {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
                     {"shape": (None, 11), "name": "edge_attributes", "dtype": "float32", "ragged": True},
                     {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
                 ]
             elif hyper["model"]["class_name"] == 'make_model_edge' and hyper["model"]["config"]["name"] == 'GIN':
                 # For GINE (edge model), ensure we have exactly the right inputs in the right order
@@ -2744,20 +2744,20 @@ if TRAIN == "True":
                     {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
                     {"shape": (None, 11), "name": "edge_attributes", "dtype": "float32", "ragged": True},
                     {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
                 ]
             elif hyper["model"]["config"]["name"] == 'GIN':
                 # For GIN, ensure we have exactly the right inputs in the right order
                 hyper["model"]["config"]["inputs"] = [
                     {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
                     {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
                 ]
             else:
-                # For other models, check if graph_desc is already in inputs to avoid duplicates
+                # For other models, check if graph_descriptors is already in inputs to avoid duplicates
                 input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-                if 'graph_desc' not in input_names:
-                    hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False})
+                if 'graph_descriptors' not in input_names:
+                    hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False})
             if 'input_embedding' in hyper["model"]["config"] and 'graph' not in hyper["model"]["config"]["input_embedding"]:
                 hyper["model"]["config"]["input_embedding"]["graph"] = {"input_dim": 100, "output_dim": 64}
             model_name=hyper["model"]["config"]["name"]
@@ -2767,8 +2767,8 @@ if TRAIN == "True":
             print('Model does not support use_graph_state, adding descriptor input manually')
             # Add descriptor input manually for models that don't have use_graph_state
             input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-            if 'graph_desc' not in input_names:
-                hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False})
+            if 'graph_descriptors' not in input_names:
+                hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False})
             # Add graph embedding to input_embedding if it doesn't exist
             if 'input_embedding' in hyper["model"]["config"] and 'graph' not in hyper["model"]["config"]["input_embedding"]:
                 hyper["model"]["config"]["input_embedding"]["graph"] = {"input_dim": 100, "output_dim": 64}
@@ -2777,11 +2777,11 @@ if TRAIN == "True":
     # Clean up duplicate inputs for DMPNN
     if 'hyper' in locals() and hyper is not None and hyper["model"]["config"]["name"] in ['DMPNN', 'ChemProp']:
         input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if "state_attributes" in input_names and "graph_desc" in input_names:
-            print("Cleaning up: Removing duplicate graph_desc input for DMPNN")
+        if "state_attributes" in input_names and "graph_descriptors" in input_names:
+            print("Cleaning up: Removing duplicate graph_descriptors input for DMPNN")
             hyper["model"]["config"]["inputs"] = [
                 input_config for input_config in hyper["model"]["config"]["inputs"] 
-                if input_config["name"] != "graph_desc"
+                if input_config["name"] != "graph_descriptors"
             ]
     
     # Check if architecture was found
@@ -2810,19 +2810,19 @@ if TRAIN == "True":
         print("Processing input names for descriptors...")
         input_names = [input_config["name"] for input_config in hyperparams["model"]["config"]["inputs"]]
         
-        # Check if we have both graph_descriptors and graph_desc (shouldn't happen with our fixes, but just in case)
-        if "graph_descriptors" in input_names and "graph_desc" in input_names:
-            print("Warning: Both graph_descriptors and graph_desc found. Removing graph_desc to avoid duplicates.")
+        # Check if we have both graph_descriptors and graph_descriptors (shouldn't happen with our fixes, but just in case)
+        if "graph_descriptors" in input_names and "graph_descriptors" in input_names:
+            print("Warning: Both graph_descriptors and graph_descriptors found. Removing graph_descriptors to avoid duplicates.")
             hyperparams["model"]["config"]["inputs"] = [
                 input_config for input_config in hyperparams["model"]["config"]["inputs"] 
-                if input_config["name"] != "graph_desc"
+                if input_config["name"] != "graph_descriptors"
             ]
-        # If we only have graph_desc, rename it to graph_descriptors
-        elif "graph_desc" in input_names and "graph_descriptors" not in input_names:
+        # If we only have graph_descriptors, rename it to graph_descriptors
+        elif "graph_descriptors" in input_names and "graph_descriptors" not in input_names:
             for input_config in hyperparams["model"]["config"]["inputs"]:
-                if input_config["name"] == "graph_desc":
+                if input_config["name"] == "graph_descriptors":
                     input_config["name"] = "graph_descriptors"
-                    print(f"Changed input name from 'graph_desc' to 'graph_descriptors'")
+                    print(f"Changed input name from 'graph_descriptors' to 'graph_descriptors'")
                     break
         # If we already have graph_descriptors, that's perfect
         elif "graph_descriptors" in input_names:
@@ -3020,7 +3020,7 @@ else:
                     {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
                     {"shape": (None, 11), "name": "edge_attributes", "dtype": "float32", "ragged": True},
                     {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
                 ]
             elif hyper["model"]["class_name"] == 'make_model_edge' and hyper["model"]["config"]["name"] == 'GIN':
                 # For GINE (edge model), ensure we have exactly the right inputs in the right order
@@ -3028,20 +3028,20 @@ else:
                     {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
                     {"shape": (None, 11), "name": "edge_attributes", "dtype": "float32", "ragged": True},
                     {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
                 ]
             elif hyper["model"]["config"]["name"] == 'GIN':
                 # For GIN, ensure we have exactly the right inputs in the right order
                 hyper["model"]["config"]["inputs"] = [
                     {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
                     {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
                 ]
             else:
-                # For other models, check if graph_desc is already in inputs to avoid duplicates
+                # For other models, check if graph_descriptors is already in inputs to avoid duplicates
                 input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-                if 'graph_desc' not in input_names:
-                    hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False})
+                if 'graph_descriptors' not in input_names:
+                    hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False})
             if 'input_embedding' in hyper["model"]["config"] and 'graph' not in hyper["model"]["config"]["input_embedding"]:
                 hyper["model"]["config"]["input_embedding"]["graph"] = {"input_dim": 100, "output_dim": 64}
             model_name=hyper["model"]["config"]["name"]
@@ -3051,8 +3051,8 @@ else:
             print('Model does not support use_graph_state, adding descriptor input manually')
             # Add descriptor input manually for models that don't have use_graph_state
             input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-            if 'graph_desc' not in input_names:
-                hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False})
+            if 'graph_descriptors' not in input_names:
+                hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False})
             # Add graph embedding to input_embedding if it doesn't exist
             if 'input_embedding' in hyper["model"]["config"] and 'graph' not in hyper["model"]["config"]["input_embedding"]:
                 hyper["model"]["config"]["input_embedding"]["graph"] = {"input_dim": 100, "output_dim": 64}
@@ -3112,11 +3112,11 @@ else:
     print("Relax!");
 
     """
-    # Just before model creation, ensure only one graph_desc input
+    # Just before model creation, ensure only one graph_descriptors input
     if architecture_name in ['AttFP', 'AttentiveFP'] and use_descriptors and descs:
         # Build the correct input list
         base_inputs = []
-        graph_desc_input = None
+        graph_descriptors_input = None
         for inp in hyper["model"]["config"]["inputs"]:
             name = inp.get("name")
             if name == "node_attributes" and not any(i.get("name") == "node_attributes" for i in base_inputs):
@@ -3125,9 +3125,9 @@ else:
                 base_inputs.append(inp)
             elif name == "edge_indices" and not any(i.get("name") == "edge_indices" for i in base_inputs):
                 base_inputs.append(inp)
-            elif name == "graph_desc" and graph_desc_input is None:
-                graph_desc_input = inp
-        if graph_desc_input is not None:
-            base_inputs.append(graph_desc_input)
+            elif name == "graph_descriptors" and graph_descriptors_input is None:
+                graph_descriptors_input = inp
+        if graph_descriptors_input is not None:
+            base_inputs.append(graph_descriptors_input)
         hyper["model"]["config"]["inputs"] = base_inputs
     """

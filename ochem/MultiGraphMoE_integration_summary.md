@@ -40,7 +40,7 @@ The MultiGraphMoE (Multi-Graph Mixture of Experts) integration has been complete
 ```ini
 [MultiGraphMoE]
 name = MultiGraphMoE
-inputs = [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True}, {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True}, {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}, {"shape": [3], "name": "graph_desc", "dtype": "float32", "ragged": False}]
+inputs = [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True}, {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True}, {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}, {"shape": [3], "name": "graph_descriptors", "dtype": "float32", "ragged": False}]
 input_embedding = {"node": {"input_dim": 95, "output_dim": 128}, "edge": {"input_dim": 5, "output_dim": 128}, "graph": {"input_dim": 100, "output_dim": 64}}
 use_graph_state = True
 multigraph_moe_args = {"num_representations": 4, "num_experts": 3, "expert_types": ["gin", "gat", "gcn"], "representation_types": ["original", "weighted", "augmented", "attention"], "use_edge_weights": True, "use_node_features": True, "use_attention": True, "dropout_rate": 0.1, "temperature": 1.0, "use_noise": True, "noise_epsilon": 1e-2}
@@ -123,7 +123,7 @@ model = make_model(
 )
 
 # Forward pass
-output = model([node_features, edge_features, edge_indices, graph_desc])
+output = model([node_features, edge_features, edge_indices, graph_descriptors])
 ```
 
 ## Benefits

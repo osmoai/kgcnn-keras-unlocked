@@ -65,7 +65,7 @@ class KAGATConv(GraphBaseLayer):
 
 ### **✅ Descriptor Integration**
 - **Graph State Support**: `use_graph_state = True`
-- **Molecular Descriptors**: Integrates `graph_desc` input for molecular features
+- **Molecular Descriptors**: Integrates `graph_descriptors` input for molecular features
 - **Conditional Information**: Supports experimental conditions and descriptors
 
 ### **✅ Performance Optimizations**
@@ -97,7 +97,7 @@ inputs = [
     {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
     {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
     {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-    {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
 ]
 ```
 

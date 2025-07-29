@@ -28,7 +28,7 @@ model_config = {
         {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
         {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
         {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
-        {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+        {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
     ],
     "use_graph_state": True,  # Enable descriptor integration
     "depthDMPNN": 4,          # DMPNN depth (paper default)
@@ -102,7 +102,7 @@ model_config = {
 ```ini
 [DGIN]
 name = DGIN
-inputs = [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True}, {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True}, {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}, {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True}, {"shape": [2], "name": "graph_desc", "dtype": "float32", "ragged": False}]
+inputs = [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True}, {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True}, {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}, {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True}, {"shape": [2], "name": "graph_descriptors", "dtype": "float32", "ragged": False}]
 input_embedding = {"node": {"input_dim": 95, "output_dim": 100}, "edge": {"input_dim": 5, "output_dim": 100}, "graph": {"input_dim": 100, "output_dim": 64}}
 use_graph_state = True
 gin_mlp = {"units": [100, 100], "use_bias": True, "activation": ["relu", "relu"], "use_normalization": True, "normalization_technique": "graph_batch"}

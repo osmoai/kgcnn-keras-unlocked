@@ -85,16 +85,16 @@ def make_model(inputs: list = None,
     node_input = ks.layers.Input(**inputs[0])
     edge_input = ks.layers.Input(**inputs[1])
     edge_index_input = ks.layers.Input(**inputs[2])
-    graph_desc_input = ks.layers.Input(**inputs[3]) if len(inputs) > 3 else None
+    graph_descriptors_input = ks.layers.Input(**inputs[3]) if len(inputs) > 3 else None
 
     # Embedding, if no feature dimension
     n = OptionalInputEmbedding(**input_embedding['node'],
                                use_embedding=len(inputs[0]['shape']) < 2)(node_input)
     ed = OptionalInputEmbedding(**input_embedding['edge'],
                                 use_embedding=len(inputs[1]['shape']) < 2)(edge_input)
-    graph_desc = OptionalInputEmbedding(
+    graph_descriptors = OptionalInputEmbedding(
         **input_embedding["graph"],
-        use_embedding=len(inputs[3]["shape"]) < 1)(graph_desc_input) if graph_desc_input is not None else None
+        use_embedding=len(inputs[3]["shape"]) < 1)(graph_descriptors_input) if graph_descriptors_input is not None else None
 
     edi = edge_index_input
 
@@ -106,12 +106,12 @@ def make_model(inputs: list = None,
     # Output embedding choice
     if output_embedding == "graph":
         out = PoolingNodes()(n)  # will return tensor
-        if graph_desc is not None:
-            out = ks.layers.Concatenate()([graph_desc, out])
+        if graph_descriptors is not None:
+            out = ks.layers.Concatenate()([graph_descriptors, out])
         out = MLP(**output_mlp)(out)
     elif output_embedding == "node":
-        if graph_desc is not None:
-            graph_state_node = GatherState()([graph_desc, n])
+        if graph_descriptors is not None:
+            graph_state_node = GatherState()([graph_descriptors, n])
             n = LazyConcatenate()([n, graph_state_node])
         out = GraphMLP(**output_mlp)(n)
         if output_to_tensor:  # For tf version < 2.8 cast to tensor below.
@@ -119,8 +119,8 @@ def make_model(inputs: list = None,
     else:
         raise ValueError("Unsupported output embedding for `GCN`")
 
-    if graph_desc_input is not None:
-        model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input, graph_desc_input],
+    if graph_descriptors_input is not None:
+        model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input, graph_descriptors_input],
             outputs=out, name=name)
     else:
         model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input], outputs=out)
@@ -197,16 +197,16 @@ def make_model_weighted(inputs: list = None,
     edge_input = ks.layers.Input(**inputs[1])
     edge_index_input = ks.layers.Input(**inputs[2])
     node_weights_input = ks.layers.Input(**inputs[3])
-    graph_desc_input = ks.layers.Input(**inputs[4]) if len(inputs) > 4 else None
+    graph_descriptors_input = ks.layers.Input(**inputs[4]) if len(inputs) > 4 else None
 
     # Embedding, if no feature dimension
     n = OptionalInputEmbedding(**input_embedding['node'],
                                use_embedding=len(inputs[0]['shape']) < 2)(node_input)
     ed = OptionalInputEmbedding(**input_embedding['edge'],
                                 use_embedding=len(inputs[1]['shape']) < 2)(edge_input)
-    graph_desc = OptionalInputEmbedding(
+    graph_descriptors = OptionalInputEmbedding(
         **input_embedding["graph"],
-        use_embedding=len(inputs[4]["shape"]) < 1)(graph_desc_input) if graph_desc_input is not None else None
+        use_embedding=len(inputs[4]["shape"]) < 1)(graph_descriptors_input) if graph_descriptors_input is not None else None
 
     edi = edge_index_input
     nw = node_weights_input
@@ -219,12 +219,12 @@ def make_model_weighted(inputs: list = None,
     # Output embedding choice
     if output_embedding == "graph":
         out = PoolingWeightedNodes()([n, nw])  # will return tensor
-        if graph_desc is not None:
-            out = ks.layers.Concatenate()([graph_desc, out])
+        if graph_descriptors is not None:
+            out = ks.layers.Concatenate()([graph_descriptors, out])
         out = MLP(**output_mlp)(out)
     elif output_embedding == "node":
-        if graph_desc is not None:
-            graph_state_node = GatherState()([graph_desc, n])
+        if graph_descriptors is not None:
+            graph_state_node = GatherState()([graph_descriptors, n])
             n = LazyConcatenate()([n, graph_state_node])
         out = GraphMLP(**output_mlp)(n)
         if output_to_tensor:  # For tf version < 2.8 cast to tensor below.
@@ -232,9 +232,9 @@ def make_model_weighted(inputs: list = None,
     else:
         raise ValueError("Unsupported output embedding for `GCN`")
     
-    if graph_desc_input is not None:
+    if graph_descriptors_input is not None:
         model = ks.models.Model(
-            inputs=[node_input, edge_input, edge_index_input, node_weights_input, graph_desc_input],
+            inputs=[node_input, edge_input, edge_index_input, node_weights_input, graph_descriptors_input],
             outputs=out, name=name)
     else:
         model = ks.models.Model(

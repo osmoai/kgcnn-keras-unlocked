@@ -90,20 +90,20 @@ def make_model(inputs: list = None,
     edge_weights = ks.layers.Input(**inputs[2])
     edge_relations = ks.layers.Input(**inputs[3])
     
-    # Handle graph_desc input if provided (for descriptors)
+    # Handle graph_descriptors input if provided (for descriptors)
     if len(inputs) > 4:
-        graph_desc_input = ks.layers.Input(**inputs[4])
+        graph_descriptors_input = ks.layers.Input(**inputs[4])
     else:
-        graph_desc_input = None
+        graph_descriptors_input = None
 
     # Embedding, if no feature dimension
     n = OptionalInputEmbedding(**input_embedding['node'], use_embedding=len(inputs[0]['shape']) < 2)(node_input)
     
-    # Embed graph_desc if provided
-    if graph_desc_input is not None:
-        graph_desc = tf.keras.layers.Dense(64, activation='relu')(graph_desc_input)
+    # Embed graph_descriptors if provided
+    if graph_descriptors_input is not None:
+        graph_descriptors = tf.keras.layers.Dense(64, activation='relu')(graph_descriptors_input)
     else:
-        graph_desc = None
+        graph_descriptors = None
 
     # Model
     for i in range(0, depth):
@@ -118,10 +118,10 @@ def make_model(inputs: list = None,
     # Output embedding choice
     if output_embedding == "graph":
         out = PoolingNodes()(n)
-        if graph_desc is not None:
-            # Flatten graph_desc to match the rank of out
-            graph_desc_flat = tf.keras.layers.Flatten()(graph_desc)
-            out = ks.layers.Concatenate()([graph_desc_flat, out])
+        if graph_descriptors is not None:
+            # Flatten graph_descriptors to match the rank of out
+            graph_descriptors_flat = tf.keras.layers.Flatten()(graph_descriptors)
+            out = ks.layers.Concatenate()([graph_descriptors_flat, out])
         out = MLP(**output_mlp)(out)
     elif output_embedding == "node":  # Node labeling
         out = GraphMLP(**output_mlp)(n)
@@ -130,8 +130,8 @@ def make_model(inputs: list = None,
     else:
         raise ValueError("Unsupported output embedding for mode `RGCN`")
 
-    if graph_desc_input is not None:
-        model = ks.models.Model(inputs=[node_input, edge_index_input, edge_weights, edge_relations, graph_desc_input], 
+    if graph_descriptors_input is not None:
+        model = ks.models.Model(inputs=[node_input, edge_index_input, edge_weights, edge_relations, graph_descriptors_input], 
             outputs=out, name=name)
     else:
         model = ks.models.Model(inputs=[node_input, edge_index_input, edge_weights, edge_relations], 

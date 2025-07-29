@@ -205,7 +205,7 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
                                has_conformers=False)
             if len(descs)>0:
                 print('Adding the graph_attributes from csv file!')
-                dataset.set_attributes(add_hydrogen=False,has_conformers=is3D,   additional_callbacks= {"graph_desc": descriptor_callback})
+                dataset.set_attributes(add_hydrogen=False,has_conformers=is3D,   additional_callbacks= {"graph_descriptors": descriptor_callback})
     
             else:
                 dataset.set_attributes(add_hydrogen=False,has_conformers=is3D)
@@ -226,7 +226,7 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
                                
         if len(descs)>0:
                 print('Adding the graph_attributes from csv file!')
-                dataset.set_attributes(add_hydrogen=False,has_conformers=is3D,   additional_callbacks= {"graph_desc": descriptor_callback})
+                dataset.set_attributes(add_hydrogen=False,has_conformers=is3D,   additional_callbacks= {"graph_descriptors": descriptor_callback})
     
         else:
                 dataset.set_attributes(add_hydrogen=False,has_conformers=is3D)
@@ -1672,7 +1672,7 @@ if TRAIN == "True":
         if 'use_graph_state' in hyper["model"]["config"].keys():
             print('changing graph states and inputs for Descriptors')
             hyper["model"]["config"]['use_graph_state']=True
-            hyper["model"]["config"]["inputs"].append({"shape": [len(descs)], "name": "graph_desc", "dtype": "float32", "ragged": False})
+            hyper["model"]["config"]["inputs"].append({"shape": [len(descs)], "name": "graph_descriptors", "dtype": "float32", "ragged": False})
 
 
     # failed next line for GINE parameters

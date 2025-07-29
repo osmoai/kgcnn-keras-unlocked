@@ -99,23 +99,23 @@ def make_model(inputs: list = None,
     edge_attr_input = ks.layers.Input(**inputs[1])
     edge_index_input = ks.layers.Input(**inputs[2])
     
-    # Handle graph_desc input if provided (for descriptors)
+    # Handle graph_descriptors input if provided (for descriptors)
     if len(inputs) > 3:
-        graph_desc_input = ks.layers.Input(**inputs[3])
+        graph_descriptors_input = ks.layers.Input(**inputs[3])
     else:
-        graph_desc_input = None
+        graph_descriptors_input = None
 
     # Embedding, if no feature dimension
     n = OptionalInputEmbedding(**input_embedding['node'],
                                use_embedding=len(inputs[0]['shape']) < 2)(node_input)
     ed = OptionalInputEmbedding(**input_embedding['edge'],
                                 use_embedding=len(inputs[1]['shape']) < 2)(edge_attr_input)
-    # Embed graph_desc if provided
-    if graph_desc_input is not None and "graph" in input_embedding:
-        graph_desc = OptionalInputEmbedding(**input_embedding['graph'],
-                                           use_embedding=len(inputs[3]['shape']) < 2)(graph_desc_input)
+    # Embed graph_descriptors if provided
+    if graph_descriptors_input is not None and "graph" in input_embedding:
+        graph_descriptors = OptionalInputEmbedding(**input_embedding['graph'],
+                                           use_embedding=len(inputs[3]['shape']) < 2)(graph_descriptors_input)
     else:
-        graph_desc = None
+        graph_descriptors = None
 
     # Model
     nk = Dense(units=attention_args['units'])(n)
@@ -140,10 +140,10 @@ def make_model(inputs: list = None,
         out = at*out
         
         # Concatenate with graph descriptors if provided
-        if graph_desc is not None:
-            # Flatten graph_desc to match the rank of out
-            graph_desc_flat = tf.keras.layers.Flatten()(graph_desc)
-            out = LazyConcatenate()([graph_desc_flat, out])
+        if graph_descriptors is not None:
+            # Flatten graph_descriptors to match the rank of out
+            graph_descriptors_flat = tf.keras.layers.Flatten()(graph_descriptors)
+            out = LazyConcatenate()([graph_descriptors_flat, out])
         
         # in the paper this is only one dense layer to the target ... very simple
         out = MLP(**output_mlp)(out)
@@ -156,8 +156,8 @@ def make_model(inputs: list = None,
     else:
         raise ValueError("Unsupported graph embedding for mode `MoGAT`")
 
-    if graph_desc_input is not None:
-        model = ks.models.Model(inputs=[node_input, edge_attr_input, edge_index_input, graph_desc_input], 
+    if graph_descriptors_input is not None:
+        model = ks.models.Model(inputs=[node_input, edge_attr_input, edge_index_input, graph_descriptors_input], 
             outputs=out, name=name)
     else:
         model = ks.models.Model(inputs=[node_input, edge_attr_input, edge_index_input], 

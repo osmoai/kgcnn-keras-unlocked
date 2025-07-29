@@ -102,11 +102,11 @@ def make_model(inputs: list = None,
     edge_input = ks.layers.Input(**inputs[1])
     edge_index_input = ks.layers.Input(**inputs[2])
     
-    # Handle graph_desc input if provided
+    # Handle graph_descriptors input if provided
     if len(inputs) > 3:
-        graph_desc_input = ks.layers.Input(**inputs[3])
+        graph_descriptors_input = ks.layers.Input(**inputs[3])
     else:
-        graph_desc_input = None
+        graph_descriptors_input = None
 
     # Embedding layers
     n = OptionalInputEmbedding(**input_embedding['node'],
@@ -114,13 +114,13 @@ def make_model(inputs: list = None,
     e = OptionalInputEmbedding(**input_embedding['edge'],
                                use_embedding=len(inputs[1]['shape']) < 2)(edge_input)
     
-    # Embed graph_desc if provided
-    if graph_desc_input is not None and "graph" in input_embedding:
-        graph_desc = OptionalInputEmbedding(
+    # Embed graph_descriptors if provided
+    if graph_descriptors_input is not None and "graph" in input_embedding:
+        graph_descriptors = OptionalInputEmbedding(
             **input_embedding["graph"],
-            use_embedding=len(inputs[3]["shape"]) < 1)(graph_desc_input)
+            use_embedding=len(inputs[3]["shape"]) < 1)(graph_descriptors_input)
     else:
-        graph_desc = None
+        graph_descriptors = None
 
     # Generate positional encodings if requested
     positional_encoding = None
@@ -134,8 +134,8 @@ def make_model(inputs: list = None,
         transformer_inputs = [n, e, edge_index_input]
         if positional_encoding is not None:
             transformer_inputs.append(positional_encoding)
-        if graph_desc is not None:
-            transformer_inputs.append(graph_desc)
+        if graph_descriptors is not None:
+            transformer_inputs.append(graph_descriptors)
         
         n = GraphTransformerLayer(**transformer_args)(transformer_inputs)
     
@@ -147,10 +147,10 @@ def make_model(inputs: list = None,
             out = PoolingNodes(**pooling_args)(n)
         
         # Add graph descriptor if provided
-        if graph_desc is not None:
-            # Flatten graph_desc to match the rank of out
-            graph_desc_flat = tf.keras.layers.Flatten()(graph_desc)
-            out = LazyConcatenate(axis=-1)([out, graph_desc_flat])
+        if graph_descriptors is not None:
+            # Flatten graph_descriptors to match the rank of out
+            graph_descriptors_flat = tf.keras.layers.Flatten()(graph_descriptors)
+            out = LazyConcatenate(axis=-1)([out, graph_descriptors_flat])
         
         out = MLP(**output_mlp)(out)
         
@@ -163,8 +163,8 @@ def make_model(inputs: list = None,
 
     # Create model
     model_inputs = [node_input, edge_input, edge_index_input]
-    if graph_desc_input is not None:
-        model_inputs.append(graph_desc_input)
+    if graph_descriptors_input is not None:
+        model_inputs.append(graph_descriptors_input)
     
     model = ks.models.Model(inputs=model_inputs, outputs=out, name=name)
     model.__kgcnn_model_version__ = __model_version__
@@ -213,11 +213,11 @@ def make_crystal_model(inputs: list = None,
     edge_input = ks.layers.Input(**inputs[1])
     edge_index_input = ks.layers.Input(**inputs[2])
     
-    # Handle graph_desc input if provided
+    # Handle graph_descriptors input if provided
     if len(inputs) > 3:
-        graph_desc_input = ks.layers.Input(**inputs[3])
+        graph_descriptors_input = ks.layers.Input(**inputs[3])
     else:
-        graph_desc_input = None
+        graph_descriptors_input = None
 
     # Embedding layers
     n = OptionalInputEmbedding(**input_embedding['node'],
@@ -225,13 +225,13 @@ def make_crystal_model(inputs: list = None,
     e = OptionalInputEmbedding(**input_embedding['edge'],
                                use_embedding=len(inputs[1]['shape']) < 2)(edge_input)
     
-    # Embed graph_desc if provided
-    if graph_desc_input is not None and "graph" in input_embedding:
-        graph_desc = OptionalInputEmbedding(
+    # Embed graph_descriptors if provided
+    if graph_descriptors_input is not None and "graph" in input_embedding:
+        graph_descriptors = OptionalInputEmbedding(
             **input_embedding["graph"],
-            use_embedding=len(inputs[3]["shape"]) < 1)(graph_desc_input)
+            use_embedding=len(inputs[3]["shape"]) < 1)(graph_descriptors_input)
     else:
-        graph_desc = None
+        graph_descriptors = None
 
     # Add geometric features for crystals
     # Node positions (if available in inputs)
@@ -260,8 +260,8 @@ def make_crystal_model(inputs: list = None,
         transformer_inputs = [n, e, edge_index_input]
         if positional_encoding is not None:
             transformer_inputs.append(positional_encoding)
-        if graph_desc is not None:
-            transformer_inputs.append(graph_desc)
+        if graph_descriptors is not None:
+            transformer_inputs.append(graph_descriptors)
         
         n = GraphTransformerLayer(**transformer_args)(transformer_inputs)
     
@@ -273,10 +273,10 @@ def make_crystal_model(inputs: list = None,
             out = PoolingNodes(**pooling_args)(n)
         
         # Add graph descriptor if provided
-        if graph_desc is not None:
-            # Flatten graph_desc to match the rank of out
-            graph_desc_flat = tf.keras.layers.Flatten()(graph_desc)
-            out = LazyConcatenate(axis=-1)([out, graph_desc_flat])
+        if graph_descriptors is not None:
+            # Flatten graph_descriptors to match the rank of out
+            graph_descriptors_flat = tf.keras.layers.Flatten()(graph_descriptors)
+            out = LazyConcatenate(axis=-1)([out, graph_descriptors_flat])
         
         out = MLP(**output_mlp)(out)
         
@@ -289,8 +289,8 @@ def make_crystal_model(inputs: list = None,
 
     # Create model
     model_inputs = [node_input, edge_input, edge_index_input]
-    if graph_desc_input is not None:
-        model_inputs.append(graph_desc_input)
+    if graph_descriptors_input is not None:
+        model_inputs.append(graph_descriptors_input)
     if len(inputs) > 4:
         model_inputs.append(pos_input)
     if len(inputs) > 5:

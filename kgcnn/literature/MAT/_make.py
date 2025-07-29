@@ -119,7 +119,7 @@ def make_model(name: str = None,
     xyz_input = ks.layers.Input(**inputs[1])
     
     if use_graph_state:
-        # New input order: [node_attributes, node_coordinates, edge_indices, graph_desc, edge_attributes]
+        # New input order: [node_attributes, node_coordinates, edge_indices, graph_descriptors, edge_attributes]
         edge_index_input = ks.layers.Input(**inputs[2])
         graph_state_input = ks.layers.Input(**inputs[3])
         edge_input = ks.layers.Input(**inputs[4])

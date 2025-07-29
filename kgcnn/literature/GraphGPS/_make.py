@@ -134,9 +134,9 @@ def make_graphgps_model(
     
     # Graph descriptor input (if using graph state)
     if use_graph_state:
-        graph_desc_input = tf.keras.layers.Input(**model_kwargs["input_graph"])
+        graph_descriptors_input = tf.keras.layers.Input(**model_kwargs["input_graph"])
     else:
-        graph_desc_input = None
+        graph_descriptors_input = None
     
     # Cast to disjoint representation
     if cast_disjoint_kwargs is not None:
@@ -154,7 +154,7 @@ def make_graphgps_model(
     
     if use_graph_embedding and model_kwargs["input_graph_embedding"] is not None:
         graph_embedding = OptionalInputEmbedding(**model_kwargs["input_graph_embedding"])
-        graph_desc_input = graph_embedding(graph_desc_input)
+        graph_descriptors_input = graph_embedding(graph_descriptors_input)
     
     # GraphGPS layers
     node_features = node_input
@@ -164,12 +164,12 @@ def make_graphgps_model(
         # GraphGPS convolution
         graphgps_layer = GraphGPSConv(**graphgps_args)
         
-        if use_graph_state and graph_desc_input is not None:
+        if use_graph_state and graph_descriptors_input is not None:
             # Add graph descriptors to node features
             # Broadcast graph descriptors to all nodes
-            graph_desc_broadcast = tf.expand_dims(graph_desc_input, axis=1)
-            graph_desc_broadcast = tf.tile(graph_desc_broadcast, [1, tf.shape(node_features)[1], 1])
-            node_features = tf.concat([node_features, graph_desc_broadcast], axis=-1)
+            graph_descriptors_broadcast = tf.expand_dims(graph_descriptors_input, axis=1)
+            graph_descriptors_broadcast = tf.tile(graph_descriptors_broadcast, [1, tf.shape(node_features)[1], 1])
+            node_features = tf.concat([node_features, graph_descriptors_broadcast], axis=-1)
         
         # Apply GraphGPS layer
         node_features = graphgps_layer([node_features, edge_features, edge_index_input])
@@ -211,7 +211,7 @@ def make_graphgps_model(
     
     # Create model
     if use_graph_state:
-        model = tf.keras.Model(inputs=[node_input, edge_input, edge_index_input, graph_desc_input], outputs=out)
+        model = tf.keras.Model(inputs=[node_input, edge_input, edge_index_input, graph_descriptors_input], outputs=out)
     else:
         model = tf.keras.Model(inputs=[node_input, edge_input, edge_index_input], outputs=out)
     
