@@ -1,9 +1,8 @@
 import tensorflow as tf
 from kgcnn.layers.base import GraphBaseLayer
-from kgcnn.layers.modules import Dense, Dropout, LazyAdd, LazyConcatenate, LayerNormalization
-from kgcnn.layers.gather import GatherNodesOutgoing
-from kgcnn.layers.aggr import AggregateLocalEdges
-from kgcnn.layers.attention import AttentionHeadGAT
+from kgcnn.layers.modules import Dense, Dropout, LazyAdd, LazyConcatenate
+from kgcnn.layers.norm import GraphLayerNormalization
+from kgcnn.layers.attention import MultiHeadGATV2Layer
 from kgcnn.ops.axis import get_axis
 from kgcnn.ops.segment import segment_softmax
 
@@ -15,10 +14,10 @@ ks = tf.keras
 
 
 class TransformerGATLayer(GraphBaseLayer):
-    r"""Transformer-enhanced GAT layer.
+    r"""Transformer-enhanced GAT layer using existing KGCNN attention mechanisms.
     
-    This layer combines local node-level attention (GAT-style) with global transformer attention layers,
-    integrating local and global graph contexts.
+    This layer combines local node-level attention (GATv2-style) with global transformer attention layers,
+    integrating local and global graph contexts using well-tested KGCNN components.
     
     Reference: Local-Global Graph Attention Networks (2023)
     """
@@ -48,39 +47,42 @@ class TransformerGATLayer(GraphBaseLayer):
         self.use_edge_features = use_edge_features
         self.dropout_rate = dropout_rate
         
-        # Local GAT components
-        self.local_gat = []
-        for i in range(attention_heads):
-            self.local_gat.append(
-                AttentionHeadGAT(
-                    units=attention_units // attention_heads,
-                    use_bias=use_bias,
-                    use_edge_features=use_edge_features,
-                    activation=activation
-                )
-            )
+        # Local GAT attention using existing KGCNN MultiHeadGATV2Layer
+        self.local_gat = MultiHeadGATV2Layer(
+            units=attention_units,
+            num_heads=attention_heads,
+            activation=activation,
+            use_bias=use_bias,
+            concat_heads=False  # We'll handle concatenation ourselves
+        )
         
-        # Global transformer components
+        # Global transformer attention
         self.global_attention = tf.keras.layers.MultiHeadAttention(
             num_heads=transformer_heads,
-            key_dim=units // transformer_heads,
-            value_dim=units // transformer_heads,
+            key_dim=attention_units // transformer_heads,
+            value_dim=attention_units // transformer_heads,
             dropout=dropout_rate
         )
         
         # Layer normalization
-        self.layer_norm1 = LayerNormalization(epsilon=1e-6)
-        self.layer_norm2 = LayerNormalization(epsilon=1e-6)
+        self.layer_norm1 = GraphLayerNormalization(epsilon=1e-6)
+        self.layer_norm2 = GraphLayerNormalization(epsilon=1e-6)
         
         # Feed-forward network
         self.ffn = tf.keras.Sequential([
-            Dense(units * 2, activation=activation, use_bias=use_bias),
+            Dense(attention_units * 2, activation=activation, use_bias=use_bias),
             Dropout(dropout_rate),
-            Dense(units, activation=activation, use_bias=use_bias)
+            Dense(attention_units, activation=activation, use_bias=use_bias)
         ])
         
         # Output projection
         self.output_projection = Dense(units, activation=activation, use_bias=use_bias)
+        
+        # Input projection to match attention output dimensions
+        self.input_projection = Dense(attention_units, activation=activation, use_bias=use_bias)
+        
+        # Skip connection projection
+        self.skip_projection = Dense(units, activation=activation, use_bias=use_bias)
         
         if dropout_rate > 0:
             self.dropout = Dropout(dropout_rate)
@@ -88,8 +90,6 @@ class TransformerGATLayer(GraphBaseLayer):
             self.dropout = None
             
         # Message passing components
-        self.gather_nodes = GatherNodesOutgoing()
-        self.aggregate_edges = AggregateLocalEdges()
         self.lazy_add = LazyAdd()
         self.lazy_concat = LazyConcatenate()
         
@@ -108,30 +108,33 @@ class TransformerGATLayer(GraphBaseLayer):
             node_attributes, edge_indices = inputs
             edge_attributes = None
         
-        # Local GAT attention
-        local_attention_outputs = []
-        for gat_head in self.local_gat:
-            if edge_attributes is not None:
-                attended = gat_head([node_attributes, node_attributes, edge_attributes, edge_indices])
-            else:
-                attended = gat_head([node_attributes, node_attributes, edge_indices])
-            local_attention_outputs.append(attended)
+        # Project input to match attention output dimensions
+        projected_node_attributes = self.input_projection(node_attributes)
         
-        # Concatenate local attention heads
-        if len(local_attention_outputs) > 1:
-            local_output = self.lazy_concat(local_attention_outputs)
+        # Local GAT attention using existing KGCNN layer
+        if edge_attributes is not None:
+            local_output = self.local_gat([projected_node_attributes, edge_attributes, edge_indices])
         else:
-            local_output = local_attention_outputs[0]
+            # Create dummy edge features if none provided
+            dummy_edges = tf.zeros_like(projected_node_attributes)
+            local_output = self.local_gat([projected_node_attributes, dummy_edges, edge_indices])
+        
+        # MultiHeadGATV2Layer returns (node_embeddings, attention_weights)
+        # We only need the node embeddings
+        if isinstance(local_output, tuple):
+            local_output = local_output[0]
         
         # Apply layer normalization and residual connection
-        local_output = self.layer_norm1(node_attributes + local_output)
+        local_output = self.layer_norm1(projected_node_attributes + local_output)
         
         # Global transformer attention
         # Convert ragged to dense for transformer
         if hasattr(local_output, 'to_tensor'):
             global_input = local_output.to_tensor()
+            row_lengths = local_output.row_lengths()
         else:
             global_input = local_output
+            row_lengths = None
         
         # Apply global attention
         global_output = self.global_attention(
@@ -139,6 +142,10 @@ class TransformerGATLayer(GraphBaseLayer):
             value=global_input,
             key=global_input
         )
+        
+        # Convert back to ragged tensor if needed
+        if row_lengths is not None:
+            global_output = tf.RaggedTensor.from_tensor(global_output, lengths=row_lengths)
         
         # Apply layer normalization and residual connection
         global_output = self.layer_norm2(local_output + global_output)
@@ -152,8 +159,9 @@ class TransformerGATLayer(GraphBaseLayer):
         # Output projection
         output = self.output_projection(output)
         
-        # Skip connection
-        output = self.lazy_add([node_attributes, output])
+        # Skip connection - project node_attributes to match output dimension
+        projected_node_attributes = self.skip_projection(node_attributes)
+        output = self.lazy_add([projected_node_attributes, output])
         
         # Apply dropout
         if self.dropout:

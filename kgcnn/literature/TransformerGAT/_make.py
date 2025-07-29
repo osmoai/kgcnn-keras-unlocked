@@ -47,7 +47,8 @@ def make_model(inputs: list = None,
                use_graph_state: bool = False,
                output_embedding: str = None,
                output_to_tensor: bool = None,
-               output_mlp: dict = None
+               output_mlp: dict = None,
+               name: str = None
                ):
     r"""Make `TransformerGAT` graph network via functional API.
     Default parameters can be found in :obj:`kgcnn.literature.TransformerGAT.model_default`.
@@ -122,7 +123,7 @@ def make_model(inputs: list = None,
     out = MLP(**output_mlp)(out)
 
     # Output casting
-    if output_to_tensor:
+    if output_to_tensor and hasattr(out, 'to_tensor'):
         out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
 
     model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input] + ([graph_descriptors_input] if graph_descriptors_input is not None else []),

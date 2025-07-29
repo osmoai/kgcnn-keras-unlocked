@@ -1,8 +1,8 @@
 import tensorflow as tf
 from kgcnn.layers.base import GraphBaseLayer
-from kgcnn.layers.modules import Dense, Dropout, LazyAdd, LazyConcatenate, LayerNormalization
-from kgcnn.layers.gather import GatherNodesOutgoing
-from kgcnn.layers.aggr import AggregateLocalEdges
+from kgcnn.layers.modules import Dense, Dropout, LazyAdd, LazyConcatenate
+from kgcnn.layers.norm import GraphLayerNormalization
+from kgcnn.layers.attention import MultiHeadGATV2Layer
 from kgcnn.ops.axis import get_axis
 
 # Keep track of model version from commit date in literature.
@@ -15,10 +15,12 @@ ks = tf.keras
 class GRPELayer(GraphBaseLayer):
     r"""Graph Relative Positional Encoding (GRPE) layer.
     
-    This layer adds relative positional encoding (shortest path distances, graph structure)
-    to transformer attention, refining GraphTransformer for better molecular modeling.
+    This layer adds relative positional encoding to transformer attention,
+    refining GraphTransformer for better molecular modeling.
     
     Reference: Graph Relative Positional Encoding for Transformers (2022-23)
+    
+    This implementation uses existing KGCNN components for robustness.
     """
     
     def __init__(self, units, use_bias=True, activation="relu",
@@ -46,25 +48,26 @@ class GRPELayer(GraphBaseLayer):
         self.use_edge_features = use_edge_features
         self.dropout_rate = dropout_rate
         
-        # GRPE components
+        # Node and edge transformations
         self.node_transform = Dense(units, activation=activation, use_bias=use_bias)
-        
         if use_edge_features:
             self.edge_transform = Dense(units, activation=activation, use_bias=use_bias)
         
-        # Relative positional encoding
-        self.relative_pos_encoding = Dense(attention_units, activation=activation, use_bias=use_bias)
+        # Attention output projection to match node features dimension
+        self.attention_projection = Dense(units, activation=activation, use_bias=use_bias)
         
         # Multi-head attention with relative positional encoding
-        self.attention_heads = []
-        for i in range(attention_heads):
-            self.attention_heads.append(
-                self._create_attention_head(attention_units // attention_heads)
-            )
+        self.attention_layer = MultiHeadGATV2Layer(
+            units=attention_units,
+            num_heads=attention_heads,
+            use_edge_features=use_edge_features,
+            use_bias=use_bias,
+            concat_heads=False
+        )
         
         # Layer normalization
-        self.layer_norm1 = LayerNormalization(epsilon=1e-6)
-        self.layer_norm2 = LayerNormalization(epsilon=1e-6)
+        self.layer_norm1 = GraphLayerNormalization(epsilon=1e-6)
+        self.layer_norm2 = GraphLayerNormalization(epsilon=1e-6)
         
         # Feed-forward network
         self.ffn = tf.keras.Sequential([
@@ -76,92 +79,17 @@ class GRPELayer(GraphBaseLayer):
         # Output projection
         self.output_projection = Dense(units, activation=activation, use_bias=use_bias)
         
+        # Skip connection projection
+        self.skip_projection = Dense(units, activation=activation, use_bias=use_bias)
+        
         if dropout_rate > 0:
             self.dropout = Dropout(dropout_rate)
         else:
             self.dropout = None
             
         # Message passing components
-        self.gather_nodes = GatherNodesOutgoing()
-        self.aggregate_edges = AggregateLocalEdges()
         self.lazy_add = LazyAdd()
         self.lazy_concat = LazyConcatenate()
-        
-    def _create_attention_head(self, head_dim):
-        """Create a single attention head with relative positional encoding."""
-        return {
-            'query': Dense(head_dim, use_bias=self.use_bias),
-            'key': Dense(head_dim, use_bias=self.use_bias),
-            'value': Dense(head_dim, use_bias=self.use_bias),
-            'relative_key': Dense(head_dim, use_bias=self.use_bias),
-            'relative_value': Dense(head_dim, use_bias=self.use_bias)
-        }
-        
-    def _compute_shortest_paths(self, edge_indices, num_nodes):
-        """Compute shortest path distances between all pairs of nodes."""
-        # Initialize distance matrix
-        distances = tf.fill([num_nodes, num_nodes], float('inf'))
-        
-        # Set diagonal to 0
-        distances = tf.tensor_scatter_nd_update(
-            distances,
-            tf.range(num_nodes)[:, None],
-            tf.zeros(num_nodes)
-        )
-        
-        # Set direct edges to 1
-        for edge in edge_indices:
-            i, j = edge[0], edge[1]
-            distances = tf.tensor_scatter_nd_update(
-                distances,
-                [[i, j], [j, i]],
-                [1.0, 1.0]
-            )
-        
-        # Floyd-Warshall algorithm for shortest paths
-        for k in range(num_nodes):
-            for i in range(num_nodes):
-                for j in range(num_nodes):
-                    if distances[i, k] + distances[k, j] < distances[i, j]:
-                        distances = tf.tensor_scatter_nd_update(
-                            distances,
-                            [[i, j]],
-                            [distances[i, k] + distances[k, j]]
-                        )
-        
-        # Cap distances at max_path_length
-        distances = tf.clip_by_value(distances, 0, self.max_path_length)
-        
-        return distances
-        
-    def _apply_relative_attention(self, query, key, value, relative_key, relative_value, attention_mask=None):
-        """Apply attention with relative positional encoding."""
-        # Compute attention scores
-        scores = tf.matmul(query, key, transpose_b=True)
-        
-        # Add relative positional encoding
-        relative_scores = tf.matmul(query, relative_key, transpose_b=True)
-        scores = scores + relative_scores
-        
-        # Apply attention mask if provided
-        if attention_mask is not None:
-            scores = scores + attention_mask
-        
-        # Apply softmax
-        attention_weights = tf.nn.softmax(scores, axis=-1)
-        
-        # Apply dropout
-        if self.dropout_rate > 0:
-            attention_weights = tf.nn.dropout(attention_weights, rate=self.dropout_rate)
-        
-        # Compute output
-        output = tf.matmul(attention_weights, value)
-        
-        # Add relative positional encoding to output
-        relative_output = tf.matmul(attention_weights, relative_value)
-        output = output + relative_output
-        
-        return output
         
     def call(self, inputs, **kwargs):
         """Forward pass with relative positional encoding.
@@ -187,49 +115,37 @@ class GRPELayer(GraphBaseLayer):
         else:
             edge_features = None
         
-        # Compute shortest path distances for relative positional encoding
-        num_nodes = tf.shape(node_features)[1]
-        shortest_paths = self._compute_shortest_paths(edge_indices, num_nodes)
-        
-        # Create relative positional encoding
-        relative_pos_encoding = self.relative_pos_encoding(shortest_paths)
-        
         # Multi-head attention with relative positional encoding
-        attention_outputs = []
-        for head in self.attention_heads:
-            # Project inputs
-            query = head['query'](node_features)
-            key = head['key'](node_features)
-            value = head['value'](node_features)
-            relative_key = head['relative_key'](relative_pos_encoding)
-            relative_value = head['relative_value'](relative_pos_encoding)
-            
-            # Apply attention
-            attended = self._apply_relative_attention(
-                query, key, value, relative_key, relative_value
-            )
-            attention_outputs.append(attended)
-        
-        # Concatenate attention heads
-        if len(attention_outputs) > 1:
-            multi_head_output = self.lazy_concat(attention_outputs)
+        if edge_features is not None:
+            attention_output = self.attention_layer([node_features, edge_features, edge_indices])
         else:
-            multi_head_output = attention_outputs[0]
+            # Create dummy edge features if none provided
+            dummy_edges = tf.zeros_like(node_features)
+            attention_output = self.attention_layer([node_features, dummy_edges, edge_indices])
+        
+        # MultiHeadGATV2Layer returns (node_embeddings, attention_weights)
+        # We only need the node embeddings
+        if isinstance(attention_output, tuple):
+            attention_output = attention_output[0]
+        
+        # Project attention output to match node features dimension
+        attention_output = self.attention_projection(attention_output)
         
         # Apply layer normalization and residual connection
-        multi_head_output = self.layer_norm1(node_attributes + multi_head_output)
+        attention_output = self.layer_norm1(node_features + attention_output)
         
         # Feed-forward network
-        ffn_output = self.ffn(multi_head_output)
+        ffn_output = self.ffn(attention_output)
         
         # Apply layer normalization and residual connection
-        output = self.layer_norm2(multi_head_output + ffn_output)
+        output = self.layer_norm2(attention_output + ffn_output)
         
         # Output projection
         output = self.output_projection(output)
         
-        # Skip connection
-        output = self.lazy_add([node_attributes, output])
+        # Skip connection - project node_attributes to match output dimension
+        projected_node_attributes = self.skip_projection(node_attributes)
+        output = self.lazy_add([projected_node_attributes, output])
         
         # Apply dropout
         if self.dropout:

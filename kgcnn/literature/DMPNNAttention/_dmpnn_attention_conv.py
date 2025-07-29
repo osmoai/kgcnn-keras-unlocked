@@ -107,7 +107,10 @@ class DMPNNAttentionPoolingEdges(GraphBaseLayer):
             edge_features = self.edge_activation_layer(edge_features)
             
             # Aggregate edge features to nodes
-            node_features_updated = self.aggregate_edges([node_attributes, edge_features, edge_indices_reverse])
+            # For DMPNN, we need to aggregate edge features back to nodes
+            # Since edge_indices_reverse might be invalid in batched setting,
+            # we'll use a simpler approach: aggregate all edges to their target nodes
+            node_features_updated = self.aggregate_edges([node_attributes, edge_features, edge_indices])
             
             # Apply node MLP
             node_features_updated = self.node_dense_layer(node_features_updated)

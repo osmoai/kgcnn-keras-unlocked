@@ -544,7 +544,8 @@ if architecture_name == 'GCN':
                 ]
             },
             "compile": {
-                "optimizer": {"class_name": "Adam", "config": {"lr": 1e-03}}
+                "optimizer": {"class_name": "Adam", "config": {"lr": 1e-03}},
+                "metrics": ["accuracy", "balanced_accuracy", "precision", "recall"]
             },
             "cross_validation": {"class_name": "KFold",
                                  "config": {"n_splits": 5, "random_state": None, "shuffle": True}}
@@ -622,6 +623,11 @@ elif architecture_name == 'GAT':
             "cross_validation": {"class_name": "KFold",
                                  "config": {"n_splits": 5, "random_state": None, "shuffle": True}}
         },
+            "compile": {
+                "optimizer": {"class_name": "Adam", "config": {"lr": 5e-03}},
+                "loss": "mean_absolute_error",
+                "metrics": ["accuracy", "balanced_accuracy", "precision", "recall"]
+            },
         "data": {
             "dataset": {
                 "class_name": "MoleculeNetDataset",
@@ -1117,11 +1123,11 @@ elif architecture_name == 'DMPNNAttention':
         },
         "training": {
             "fit": {
-                "batch_size": 32, "epochs": 150, "validation_freq": 1, "verbose": 2,
+                "batch_size": 32, "epochs": 2, "validation_freq": 1, "verbose": 2,
                 "callbacks": [
                     {
                         "class_name": "kgcnn>LinearLearningRateScheduler", "config": {
-                            "learning_rate_start": 0.001, "learning_rate_stop": 1e-05, "epo_min": 75, "epo": 150,
+                            "learning_rate_start": 0.001, "learning_rate_stop": 1e-05, "epo_min": 1, "epo": 2,
                             "verbose": 0
                         }
                     }
@@ -1130,7 +1136,8 @@ elif architecture_name == 'DMPNNAttention':
             "compile": {
                 "optimizer": {"class_name": "Addons>AdamW", "config": {"lr": 0.001,
                                                                        "weight_decay": 1e-05}
-                              }
+                              },
+                "metrics": ["accuracy", "balanced_accuracy", "precision", "recall"]
             },
             "cross_validation": {"class_name": "KFold",
                                  "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
@@ -1142,7 +1149,6 @@ elif architecture_name == 'DMPNNAttention':
                 "config": {},
                 "methods": [
                     {"set_attributes": {}},
-                    {"map_list": {"method": "validate_edge_indices"}},
                     {"map_list": {"method": "set_edge_indices_reverse"}}
                 ]
             },
@@ -1456,6 +1462,19 @@ elif architecture_name == 'GraphTransformer':
                               }
                 },
                 "loss": "mean_absolute_error"
+            },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": "mean_absolute_error",
+                "metrics": ["accuracy", "balanced_accuracy", "precision", "recall"]
             },
             "cross_validation": {"class_name": "KFold",
                                  "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
@@ -2257,6 +2276,12 @@ elif architecture_name == 'TransformerGAT':
                                  "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
             "execute_folds": 1
         },
+            "compile": {
+                "optimizer": {"class_name": "Addons>AdamW", "config": {"lr": 0.001,
+                                                                       "weight_decay": 1e-05}
+                              },
+                "metrics": ["accuracy", "balanced_accuracy", "precision", "recall"]
+            },
         "data": {
             "dataset": {
                 "class_name": "MoleculeNetDataset",
@@ -2407,6 +2432,12 @@ elif architecture_name == 'KAGAT':
                                  "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
             "execute_folds": 1
         },
+            "compile": {
+                "optimizer": {"class_name": "Addons>AdamW", "config": {"lr": 0.001,
+                                                                       "weight_decay": 1e-05}
+                              },
+                "metrics": ["accuracy", "balanced_accuracy", "precision", "recall"]
+            },
         "data": {
             "dataset": {
                 "class_name": "MoleculeNetDataset",

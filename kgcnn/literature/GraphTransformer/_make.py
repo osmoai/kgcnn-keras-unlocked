@@ -148,6 +148,9 @@ def make_model(inputs: list = None,
         
         # Add graph descriptor if provided
         if graph_descriptors is not None:
+            # Squeeze the Set2Set output to remove extra dimension if present
+            if len(out.shape) == 3 and out.shape[1] == 1:
+                out = tf.keras.layers.Lambda(lambda x: tf.squeeze(x, axis=1))(out)
             # Flatten graph_descriptors to match the rank of out
             graph_descriptors_flat = tf.keras.layers.Flatten()(graph_descriptors)
             out = LazyConcatenate(axis=-1)([out, graph_descriptors_flat])

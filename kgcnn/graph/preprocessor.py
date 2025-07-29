@@ -104,34 +104,71 @@ class ValidateEdgeIndices(GraphPreProcessorBase):
     r"""Validate and fix edge indices to ensure they are within the valid range for each graph.
     
     This preprocessor checks that all edge indices reference valid node indices and removes
-    any edges that reference non-existent nodes.
+    any edges that reference non-existent nodes. For directed models like DMPNN, it also
+    validates edge_indices_reverse if present.
     
     Args:
         edge_indices (str): Name of indices in dictionary. Default is "edge_indices".
         edge_attributes (str): Name of edge attributes to filter along with indices. Default is "^edge_(?!indices$).*".
+        node_attributes (str): Name of node attributes to get node count. Default is "node_attributes".
+        edge_indices_reverse (str): Name of reverse indices to validate. Default is "edge_indices_reverse".
     """
 
     def __init__(self, *, edge_indices: str = "edge_indices", edge_attributes: str = "^edge_(?!indices$).*",
+                 node_attributes: str = "node_attributes", edge_indices_reverse: str = "edge_indices_reverse",
                  name="validate_edge_indices", **kwargs):
         super().__init__(name=name, **kwargs)
-        self._to_obtain.update({"edge_indices": edge_indices, "edge_attributes": edge_attributes})
+        self._to_obtain.update({
+            "edge_indices": edge_indices, 
+            "edge_attributes": edge_attributes, 
+            "node_attributes": node_attributes,
+            "edge_indices_reverse": edge_indices_reverse
+        })
         self._to_assign = edge_indices
-        self._silent = ["edge_attributes"]
-        self._config_kwargs.update({"edge_indices": edge_indices, "edge_attributes": edge_attributes})
+        self._silent = ["edge_attributes", "edge_indices_reverse"]
+        self._config_kwargs.update({
+            "edge_indices": edge_indices, 
+            "edge_attributes": edge_attributes, 
+            "node_attributes": node_attributes,
+            "edge_indices_reverse": edge_indices_reverse
+        })
 
-    def call(self, *, edge_indices: np.ndarray, edge_attributes: list):
+    def call(self, *, edge_indices: np.ndarray, edge_attributes: list, node_attributes: np.ndarray, edge_indices_reverse: np.ndarray = None):
         if edge_indices is None:
             return None
         
-        # Get the number of nodes (assuming node_attributes length)
-        num_nodes = len(self._graph_dict.get("node_attributes", []))
+        # Get the number of nodes from node_attributes
+        num_nodes = len(node_attributes) if node_attributes is not None else 0
         
         if num_nodes == 0:
             return edge_indices
         
+        # Handle different edge_indices formats
+        if edge_indices.ndim == 1:
+            # If edge_indices is 1D, assume it's a flat array of indices
+            # We need to reshape it to pairs of (source, target)
+            if len(edge_indices) % 2 == 0:
+                edge_indices = edge_indices.reshape(-1, 2)
+            else:
+                # If odd length, this might be a different format
+                return edge_indices
+        
         # Find valid edges (both source and target nodes exist)
         valid_mask = (edge_indices[:, 0] >= 0) & (edge_indices[:, 0] < num_nodes) & \
                     (edge_indices[:, 1] >= 0) & (edge_indices[:, 1] < num_nodes)
+        
+        # For directed models, also validate edge_indices_reverse if present
+        if edge_indices_reverse is not None:
+            # edge_indices_reverse should be 1D array of indices
+            if edge_indices_reverse.ndim == 1:
+                # Check that reverse indices are within valid range
+                reverse_valid_mask = (edge_indices_reverse >= 0) & (edge_indices_reverse < len(edge_indices))
+                # Combine with original valid mask
+                valid_mask = valid_mask & reverse_valid_mask
+            elif edge_indices_reverse.ndim == 2:
+                # If it's 2D, check each dimension
+                reverse_valid_mask = (edge_indices_reverse[:, 0] >= 0) & (edge_indices_reverse[:, 0] < len(edge_indices))
+                valid_mask = valid_mask & reverse_valid_mask
         
         # Filter edge indices
         valid_edge_indices = edge_indices[valid_mask]
