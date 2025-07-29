@@ -58,16 +58,23 @@ def make_contrastive_gnn_model(
         edge_input = ks.layers.Input(**inputs[1])
         edge_index_input = ks.layers.Input(**inputs[2])
         
-        # Handle graph_descriptors input if provided
-        if len(inputs) > 3:
-            graph_descriptors_input = ks.layers.Input(**inputs[3])
-        else:
-            graph_descriptors_input = None
-            
-        # Create list of actual input tensors
+        # Handle additional inputs (edge_indices_reverse, graph_descriptors, etc.)
         input_tensors = [node_input, edge_input, edge_index_input]
-        if graph_descriptors_input is not None:
-            input_tensors.append(graph_descriptors_input)
+        
+        # Add edge_indices_reverse if provided (for DGIN, DMPNN, etc.)
+        if len(inputs) > 3:
+            edge_reverse_input = ks.layers.Input(**inputs[3])
+            input_tensors.append(edge_reverse_input)
+            
+            # Add graph_descriptors if provided
+            if len(inputs) > 4:
+                graph_descriptors_input = ks.layers.Input(**inputs[4])
+                input_tensors.append(graph_descriptors_input)
+        else:
+            # Only graph_descriptors provided (for GAT, GATv2, etc.)
+            if len(inputs) > 3:
+                graph_descriptors_input = ks.layers.Input(**inputs[3])
+                input_tensors.append(graph_descriptors_input)
     else:
         # Inputs are already tensors
         input_tensors = inputs
@@ -145,16 +152,29 @@ def make_contrastive_gnn_model(
         def call(self, inputs, training=None):
             # Create constant edge features
             edge_indices = inputs
-            # Get the shape of edge_indices and create constant features
-            edge_features = tf.ones_like(edge_indices, dtype=tf.float32)
-            # Expand to match the units dimension
-            edge_features = tf.expand_dims(edge_features, axis=-1)
-            edge_features = tf.tile(edge_features, [1, 1, self.units])
-            return edge_features
+            if isinstance(edge_indices, tf.RaggedTensor):
+                # Handle ragged tensors
+                flat_values = edge_indices.flat_values
+                # Create constant features for flat values
+                edge_features = tf.ones_like(flat_values, dtype=tf.float32)
+                # Expand to match the units dimension
+                edge_features = tf.expand_dims(edge_features, axis=-1)
+                edge_features = tf.tile(edge_features, [1, 1, self.units])
+                # Reconstruct ragged tensor
+                return tf.RaggedTensor.from_nested_row_splits(
+                    edge_features, edge_indices.nested_row_splits
+                )
+            else:
+                # Handle regular tensors
+                edge_features = tf.ones_like(edge_indices, dtype=tf.float32)
+                # Expand to match the units dimension
+                edge_features = tf.expand_dims(edge_features, axis=-1)
+                edge_features = tf.tile(edge_features, [1, 1, self.units])
+                return edge_features
     
     # Create edge features
-    if gnn_type.lower() in ["gat", "gatv2"]:
-        # For GAT/GATv2, use actual edge attributes
+    if gnn_type.lower() in ["gat", "gatv2", "dgin", "dmpnn"]:
+        # For GAT/GATv2/DGIN/DMPNN, use actual edge attributes
         if input_embedding and "edge" in input_embedding:
             edge_embedding_config = input_embedding["edge"].copy()
             # Use DenseEmbedding for float inputs (edge attributes)
@@ -170,8 +190,16 @@ def make_contrastive_gnn_model(
     # Graph state (descriptors) - handle the case where graph_descriptors is at different positions
     graph_embedding = None
     if use_graph_state:
-        if len(input_tensors) > 3:
-            # We have separate graph_descriptors input
+        if len(input_tensors) > 4:
+            # We have separate graph_descriptors input (for DGIN, DMPNN, etc.)
+            if input_embedding and "graph" in input_embedding:
+                graph_embedding_config = input_embedding["graph"].copy()
+                # Use regular Dense layer for graph descriptors (they are regular tensors, not ragged)
+                graph_embedding = ks.layers.Dense(units=graph_embedding_config["output_dim"])(input_tensors[4])
+            else:
+                graph_embedding = input_tensors[4]
+        elif len(input_tensors) > 3:
+            # We have separate graph_descriptors input (for GAT, GATv2, etc.)
             if input_embedding and "graph" in input_embedding:
                 graph_embedding_config = input_embedding["graph"].copy()
                 # Use DenseEmbedding for float inputs (graph descriptors)
@@ -256,33 +284,42 @@ def make_contrastive_gnn_model(
             n, _ = layer([n, ed])
     
     elif gnn_type.lower() == "dgin":
-        # Contrastive DGIN implementation
+        # Contrastive DGIN implementation using real DGIN layers (like DMPNN)
         # DGIN requires edge_indices_reverse
-        if len(inputs) < 4:
+        if len(input_tensors) < 4:
             raise ValueError("DGIN requires edge_indices_reverse input")
-        ed_reverse = inputs[3]
+        ed_reverse = input_tensors[3]
         
         gnn_layers = []
-        for i in range(depth):
-            layer = ContrastiveDGINConv(
-                units=units,
-                depth=2,  # Internal DGIN depth
-                use_normalization=contrastive_args.get("use_normalization", True),
-                normalization_technique=contrastive_args.get("normalization_technique", "graph_batch"),
-                dropout_rate=contrastive_args.get("dropout_rate", 0.1),
-                num_views=contrastive_args["num_views"],
-                edge_drop_rate=contrastive_args.get("edge_drop_rate", 0.1),
-                node_mask_rate=contrastive_args.get("node_mask_rate", 0.1),
-                feature_noise_std=contrastive_args.get("feature_noise_std", 0.01),
-                use_contrastive_loss=contrastive_args["use_contrastive_loss"],
-                contrastive_loss_type=contrastive_args["contrastive_loss_type"],
-                temperature=contrastive_args["temperature"]
-            )
-            gnn_layers.append(layer)
         
-        # Apply DGIN layers
-        for layer in gnn_layers:
-            n, _ = layer([n, e, ed, ed_reverse])
+        # Import the DGIN pooling layer
+        from kgcnn.literature.ContrastiveGNN._contrastive_dgin_conv import DGINPPoolingEdgesDirected
+        
+        for i in range(depth):
+            # Create multiple DGIN views
+            dgin_views = []
+            for view_idx in range(contrastive_args["num_views"]):
+                # Use real DGIN layer
+                dgin_layer = DGINPPoolingEdgesDirected(
+                    units=units,
+                    use_bias=kwargs.get("use_bias", True),
+                    activation=kwargs.get("activation", "relu")
+                )
+                
+                # Apply DGIN layer
+                hv = dgin_layer([n, e, ed, ed_reverse])
+                
+                # Apply dropout if specified
+                if kwargs.get("dropout") is not None:
+                    hv = Dropout(**kwargs["dropout"])(hv)
+                
+                dgin_views.append(hv)
+            
+            # Store the DGIN views for contrastive loss computation
+            gnn_layers.append(dgin_views)
+            
+            # Combine view outputs
+            n = tf.add_n(dgin_views) / len(dgin_views)
     
     elif gnn_type.lower() == "gat":
         # Contrastive GAT implementation

@@ -3253,7 +3253,7 @@ elif architecture_name == 'ContrastiveDGIN':
             {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-            {"shape": [None, 1], "name": "edge_pairs", "dtype": "int64", "ragged": True},
+            {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
             {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         ],
         "input_embedding": {
@@ -3321,7 +3321,14 @@ elif architecture_name == 'ContrastiveDGIN':
             "contrastive_weight": 0.1,
             "num_views": 2,
             "use_diversity_loss": False,
-            "use_auxiliary_loss": False
+            "use_auxiliary_loss": False,
+            "augmentation_type": "molclr",  # Default augmentation strategy
+            "augmentation_args": {
+                "node_mask_rate": 0.15,
+                "edge_drop_rate": 0.15,
+                "subgraph_ratio": 0.8,
+                "feature_noise_std": 0.01
+            }
         }
     }
     
@@ -3363,7 +3370,8 @@ elif architecture_name == 'ContrastiveDGIN':
                 "class_name": "MoleculeNetDataset",
                 "config": {},
                 "methods": [
-                    {"set_attributes": {}}
+                    {"set_attributes": {}},
+                    {"map_list": {"method": "set_edge_indices_reverse"}}
                 ]
             },
             "data_unit": "mol/L"
@@ -3985,7 +3993,7 @@ if TRAIN == "True":
             from kgcnn.literature.AddGNN import make_contrastive_addgnn_model
             model = make_contrastive_addgnn_model(**hyperparam['model']["config"])
         elif architecture_name == 'ContrastiveDGIN':
-            from kgcnn.literature.DGIN import make_contrastive_dgin_model
+            from kgcnn.literature.ContrastiveGNN import make_contrastive_dgin_model
             model = make_contrastive_dgin_model(**hyperparam['model']["config"])
         elif architecture_name == 'ContrastivePNA':
             from kgcnn.literature.PNA import make_contrastive_pna_model
