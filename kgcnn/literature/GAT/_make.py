@@ -265,5 +265,13 @@ def make_contrastive_gat_model(inputs: list = None,
             loss=ContrastiveLoss(contrastive_args),
             metrics=['accuracy']
         )
+    else:
+        # If not using contrastive loss, still compile with standard loss
+        # This ensures the model is always compiled
+        base_model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+            loss='binary_crossentropy',
+            metrics=['accuracy']
+        )
     
     return base_model

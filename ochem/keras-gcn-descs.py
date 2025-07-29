@@ -4030,7 +4030,7 @@ if TRAIN == "True":
     
     # need to change this for class / regression
     if architecture_name.startswith('Contrastive'):
-        if architecture_name in ['ContrastiveGIN', 'ContrastiveGAT', 'ContrastiveDMPNN', 'ContrastiveAttFP', 'ContrastiveAddGNN', 'ContrastiveDGIN', 'ContrastivePNA', 'ContrastiveMoE', 'MoE', 'ConfigurableMoE']:
+        if architecture_name in ['ContrastiveGIN', 'ContrastiveDMPNN', 'ContrastiveAttFP', 'ContrastiveAddGNN', 'ContrastiveDGIN', 'ContrastivePNA', 'ContrastiveMoE', 'MoE', 'ConfigurableMoE']:
             # Our Contrastive models are already compiled with their custom loss
             print(f"{architecture_name} model already compiled with custom contrastive loss - skipping recompilation")
         else:
