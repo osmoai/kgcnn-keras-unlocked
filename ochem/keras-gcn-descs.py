@@ -169,19 +169,58 @@ def splitingTrain_Val(dataset,labels,data_length, inputs=None, hypers=None, idx=
 
     isClass = isClassifer(ytrain)
     # change activation function ! we do use sigmoid or softmax in general
+    # CRITICAL RULE: NEVER use 2 sigmoid activations with last_mlp + output_mlp combo!
     if isClass:
-        if isCCE:
-            # only for two target classes minimum
+        # Check if we have last_mlp (main output layer) or just output_mlp
+        if 'last_mlp' in hypers['model']["config"]:
+            # update_output_dimensions already set last_mlp activation correctly
+            # CRITICAL: Just ensure output_mlp is linear (it's just a wrapper)
             if isinstance(hypers['model']["config"]['output_mlp']['activation'], list):
-                hypers['model']["config"]['output_mlp']['activation'][-1] = 'softmax'
+                hypers['model']["config"]['output_mlp']['activation'][-1] = 'linear'
             else:
-                hypers['model']["config"]['output_mlp']['activation'] = 'softmax'
+                hypers['model']["config"]['output_mlp']['activation'] = 'linear'
+            print(f"✅ Ensured output_mlp is linear for {hypers['model']['config']['name']}")
         else:
-            # generally it works
-            if isinstance(hypers['model']["config"]['output_mlp']['activation'], list):
-                hypers['model']["config"]['output_mlp']['activation'][-1] = 'sigmoid'
+            # Only output_mlp exists - modify it directly for classification
+            if isCCE:
+                # only for two target classes minimum
+                if isinstance(hypers['model']["config"]['output_mlp']['activation'], list):
+                    hypers['model']["config"]['output_mlp']['activation'][-1] = 'softmax'
+                else:
+                    hypers['model']["config"]['output_mlp']['activation'] = 'softmax'
             else:
-                hypers['model']["config"]['output_mlp']['activation'] = 'sigmoid'
+                # generally it works
+                if isinstance(hypers['model']["config"]['output_mlp']['activation'], list):
+                    hypers['model']["config"]['output_mlp']['activation'][-1] = 'sigmoid'
+                else:
+                    hypers['model']["config"]['output_mlp']['activation'] = 'sigmoid'
+    
+    # FINAL SAFETY CHECK: Ensure no double sigmoid for any model
+    if 'last_mlp' in hypers['model']["config"] and 'output_mlp' in hypers['model']["config"]:
+        last_activation = hypers['model']["config"]["last_mlp"].get('activation', 'linear')
+        output_activation = hypers['model']["config"]["output_mlp"].get('activation', 'linear')
+        
+        # Check if both have sigmoid
+        last_is_sigmoid = False
+        output_is_sigmoid = False
+        
+        if isinstance(last_activation, list) and len(last_activation) > 0:
+            last_is_sigmoid = last_activation[-1] in ['sigmoid', 'softmax']
+        elif isinstance(last_activation, str):
+            last_is_sigmoid = last_activation in ['sigmoid', 'softmax']
+            
+        if isinstance(output_activation, list) and len(output_activation) > 0:
+            output_is_sigmoid = output_activation[-1] in ['sigmoid', 'softmax']
+        elif isinstance(output_activation, str):
+            output_is_sigmoid = output_activation in ['sigmoid', 'softmax']
+        
+        if last_is_sigmoid and output_is_sigmoid:
+            print(f"🚨 CRITICAL ERROR: Double sigmoid detected in {hypers['model']['config']['name']}! Fixing output_mlp to linear...")
+            if isinstance(hypers['model']["config"]["output_mlp"]['activation'], list):
+                hypers['model']["config"]["output_mlp"]['activation'][-1] = 'linear'
+            else:
+                hypers['model']["config"]["output_mlp"]['activation'] = 'linear'
+            print(f"✅ Fixed: output_mlp activation is now: {hypers['model']['config']['output_mlp']['activation']}")
 
     hyper = HyperParameter(hypers,
                              model_name=hypers['model']['config']['name'],
@@ -236,19 +275,13 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
                                has_conformers=False)
             if len(descs)>0:
                 print('Adding the graph_attributes from csv file!')
-                # Use state_attributes for DMPNN, graph_desc for other models
-                callback_name = "state_attributes" if modelname == "DMPNN" else "graph_desc"
+                # Use graph_descriptors for all models (standardized naming)
+                callback_name = "graph_descriptors"
                 print(f"Using callback name: {callback_name} for model: {modelname}")
                 
-                # For DMPNN, also add graph_desc callback as fallback for compatibility
-                if modelname == "DMPNN":
-                    additional_callbacks = {
-                        "state_attributes": descriptor_callback,
-                        "graph_desc": descriptor_callback  # Fallback for compatibility
-                    }
-                    print(f"DMPNN: Added both state_attributes and graph_desc callbacks for maximum compatibility")
-                else:
-                    additional_callbacks = {callback_name: descriptor_callback}
+                # Use only the appropriate callback for each model
+                additional_callbacks = {callback_name: descriptor_callback}
+                print(f"{modelname}: Using {callback_name} for descriptors")
                 
                 dataset.set_attributes(add_hydrogen=False,has_conformers=is3D, additional_callbacks=additional_callbacks)
     
@@ -271,19 +304,13 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
                                
         if len(descs)>0:
                 print('Adding the graph_attributes from csv file!')
-                # Use state_attributes for DMPNN, graph_desc for other models
-                callback_name = "state_attributes" if modelname == "DMPNN" else "graph_desc"
+                # Use graph_descriptors for all models (standardized naming)
+                callback_name = "graph_descriptors"
                 print(f"Using callback name: {callback_name} for model: {modelname}")
                 
-                # For DMPNN, also add graph_desc callback as fallback for compatibility
-                if modelname == "DMPNN":
-                    additional_callbacks = {
-                        "state_attributes": descriptor_callback,
-                        "graph_desc": descriptor_callback  # Fallback for compatibility
-                    }
-                    print(f"DMPNN: Added both state_attributes and graph_desc callbacks for maximum compatibility")
-                else:
-                    additional_callbacks = {callback_name: descriptor_callback}
+                # Use only the appropriate callback for each model
+                additional_callbacks = {callback_name: descriptor_callback}
+                print(f"{modelname}: Using {callback_name} for descriptors")
                 
                 dataset.set_attributes(add_hydrogen=False,has_conformers=is3D, additional_callbacks=additional_callbacks)
     
@@ -403,24 +430,8 @@ def update_output_dimensions(config_dict, architecture_name=None):
                 print(f"Failed to parse output_mlp from config: {e}")
     
     # Fallback to original logic
-    if "output_mlp" in config_dict:
-        print(f"Before update - output_mlp: {config_dict['output_mlp']}")
-        if isinstance(config_dict["output_mlp"].get('units', []), list) and len(config_dict["output_mlp"]['units']) > 0:
-            config_dict["output_mlp"]['units'][-1] = output_dim
-            print(f"Updated output_mlp units list: {config_dict['output_mlp']['units']}")
-        elif isinstance(config_dict["output_mlp"].get('units', 1), int):
-            config_dict["output_mlp"]['units'] = output_dim
-            print(f"Updated output_mlp units: {config_dict['output_mlp']['units']}")
-        
-        # Update activation
-        if isinstance(config_dict["output_mlp"].get('activation', []), list) and len(config_dict["output_mlp"]['activation']) > 0:
-            config_dict["output_mlp"]['activation'][-1] = activation
-            print(f"Updated output_mlp activation list: {config_dict['output_mlp']['activation']}")
-        elif isinstance(config_dict["output_mlp"].get('activation', 'linear'), str):
-            config_dict["output_mlp"]['activation'] = activation
-            print(f"Updated output_mlp activation: {config_dict['output_mlp']['activation']}")
-        print(f"After update - output_mlp: {config_dict['output_mlp']}")
-    
+    # CRITICAL RULE: NEVER use 2 sigmoid activations with last_mlp + output_mlp combo!
+    # Priority: last_mlp over output_mlp
     if "last_mlp" in config_dict:
         print(f"Before update - last_mlp: {config_dict['last_mlp']}")
         if isinstance(config_dict["last_mlp"].get('units', []), list) and len(config_dict["last_mlp"]['units']) > 0:
@@ -430,7 +441,7 @@ def update_output_dimensions(config_dict, architecture_name=None):
             config_dict["last_mlp"]['units'] = output_dim
             print(f"Updated last_mlp units: {config_dict['last_mlp']['units']}")
         
-        # Update activation
+        # Update activation for last_mlp (main output layer)
         if isinstance(config_dict["last_mlp"].get('activation', []), list) and len(config_dict["last_mlp"]['activation']) > 0:
             config_dict["last_mlp"]['activation'][-1] = activation
             print(f"Updated last_mlp activation list: {config_dict['last_mlp']['activation']}")
@@ -438,6 +449,52 @@ def update_output_dimensions(config_dict, architecture_name=None):
             config_dict["last_mlp"]['activation'] = activation
             print(f"Updated last_mlp activation: {config_dict['last_mlp']['activation']}")
         print(f"After update - last_mlp: {config_dict['last_mlp']}")
+    
+    if "output_mlp" in config_dict:
+        print(f"Before update - output_mlp: {config_dict['output_mlp']}")
+        if isinstance(config_dict["output_mlp"].get('units', []), list) and len(config_dict["output_mlp"]['units']) > 0:
+            config_dict["output_mlp"]['units'][-1] = output_dim
+            print(f"Updated output_mlp units list: {config_dict['output_mlp']['units']}")
+        elif isinstance(config_dict["output_mlp"].get('units', 1), int):
+            config_dict["output_mlp"]['units'] = output_dim
+            print(f"Updated output_mlp units: {config_dict['output_mlp']['units']}")
+        
+        # CRITICAL: For output_mlp, ALWAYS use linear activation (it's just a wrapper)
+        # This prevents double sigmoid issues!
+        if isinstance(config_dict["output_mlp"].get('activation', []), list) and len(config_dict["output_mlp"]['activation']) > 0:
+            config_dict["output_mlp"]['activation'][-1] = 'linear'
+            print(f"CRITICAL: Set output_mlp activation to linear (prevents double sigmoid): {config_dict['output_mlp']['activation']}")
+        elif isinstance(config_dict["output_mlp"].get('activation', 'linear'), str):
+            config_dict["output_mlp"]['activation'] = 'linear'
+            print(f"CRITICAL: Set output_mlp activation to linear (prevents double sigmoid): {config_dict['output_mlp']['activation']}")
+        print(f"After update - output_mlp: {config_dict['output_mlp']}")
+    
+    # FINAL SAFETY CHECK: Ensure no double sigmoid
+    if "last_mlp" in config_dict and "output_mlp" in config_dict:
+        last_activation = config_dict["last_mlp"].get('activation', 'linear')
+        output_activation = config_dict["output_mlp"].get('activation', 'linear')
+        
+        # Check if both have sigmoid
+        last_is_sigmoid = False
+        output_is_sigmoid = False
+        
+        if isinstance(last_activation, list) and len(last_activation) > 0:
+            last_is_sigmoid = last_activation[-1] in ['sigmoid', 'softmax']
+        elif isinstance(last_activation, str):
+            last_is_sigmoid = last_activation in ['sigmoid', 'softmax']
+            
+        if isinstance(output_activation, list) and len(output_activation) > 0:
+            output_is_sigmoid = output_activation[-1] in ['sigmoid', 'softmax']
+        elif isinstance(output_activation, str):
+            output_is_sigmoid = output_activation in ['sigmoid', 'softmax']
+        
+        if last_is_sigmoid and output_is_sigmoid:
+            print("🚨 CRITICAL ERROR: Double sigmoid detected! Fixing output_mlp to linear...")
+            if isinstance(config_dict["output_mlp"]['activation'], list):
+                config_dict["output_mlp"]['activation'][-1] = 'linear'
+            else:
+                config_dict["output_mlp"]['activation'] = 'linear'
+            print(f"✅ Fixed: output_mlp activation is now: {config_dict['output_mlp']['activation']}")
     
     return config_dict
 
@@ -1187,7 +1244,7 @@ elif architecture_name == 'DGIN':
             {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
             {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
-            {"shape": [desc_dim], "name": "graph_desc", "dtype": "float32", "ragged": False}
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         ],
         "input_embedding": {
             "node": {"input_dim": 95, "output_dim": 100},
@@ -2748,30 +2805,30 @@ if TRAIN == "True":
     dataset, invalid= prepData(TRAIN_FILE, cols, hyper=hyperparams, 
         modelname=architecture_name, overwrite=overwrite, descs=descs)
 
-    # Fix input names for DMPNN with descriptors - support both state_attributes and graph_desc
-    if architecture_name == "DMPNN" and descs:
-        print("Processing DMPNN input names for descriptors...")
+    # Fix input names for models with descriptors - standardize to graph_descriptors
+    if descs:
+        print("Processing input names for descriptors...")
         input_names = [input_config["name"] for input_config in hyperparams["model"]["config"]["inputs"]]
         
-        # Check if we have both state_attributes and graph_desc (shouldn't happen with our fixes, but just in case)
-        if "state_attributes" in input_names and "graph_desc" in input_names:
-            print("Warning: Both state_attributes and graph_desc found. Removing graph_desc to avoid duplicates.")
+        # Check if we have both graph_descriptors and graph_desc (shouldn't happen with our fixes, but just in case)
+        if "graph_descriptors" in input_names and "graph_desc" in input_names:
+            print("Warning: Both graph_descriptors and graph_desc found. Removing graph_desc to avoid duplicates.")
             hyperparams["model"]["config"]["inputs"] = [
                 input_config for input_config in hyperparams["model"]["config"]["inputs"] 
                 if input_config["name"] != "graph_desc"
             ]
-        # If we only have graph_desc, rename it to state_attributes
-        elif "graph_desc" in input_names and "state_attributes" not in input_names:
+        # If we only have graph_desc, rename it to graph_descriptors
+        elif "graph_desc" in input_names and "graph_descriptors" not in input_names:
             for input_config in hyperparams["model"]["config"]["inputs"]:
                 if input_config["name"] == "graph_desc":
-                    input_config["name"] = "state_attributes"
-                    print(f"Changed input name from 'graph_desc' to 'state_attributes'")
+                    input_config["name"] = "graph_descriptors"
+                    print(f"Changed input name from 'graph_desc' to 'graph_descriptors'")
                     break
-        # If we already have state_attributes, that's perfect
-        elif "state_attributes" in input_names:
-            print("DMPNN already has state_attributes input - perfect!")
+        # If we already have graph_descriptors, that's perfect
+        elif "graph_descriptors" in input_names:
+            print(f"{architecture_name} already has graph_descriptors input - perfect!")
         else:
-            print("Warning: No descriptor input found for DMPNN despite descriptors being enabled")
+            print("Warning: No descriptor input found despite descriptors being enabled")
 
     print(f"Validating model inputs: {[input_config['name'] for input_config in hyperparams['model']['config']['inputs']]}")
     dataset.assert_valid_model_input(hyperparams["model"]["config"]["inputs"])  # failed for GCN code here
@@ -2817,8 +2874,8 @@ if TRAIN == "True":
         model = make_model(**hyperparam['model']["config"])
         print("Contrastive model created successfully!")
     else:
-        # For DMPNN, we need to keep use_graph_state for descriptor support
-        if hyperparam["model"]["config"]["name"] in ['DMPNN', 'ChemProp']:
+        # For models that support descriptors, we need to keep use_graph_state
+        if hyperparam["model"]["config"]["name"] in ['DMPNN', 'ChemProp', 'DGIN']:
             print(f"Creating {hyperparam['model']['config']['name']} model with use_graph_state support")
             model = make_model(**hyperparam['model']["config"])
         else:
@@ -2892,6 +2949,13 @@ if TRAIN == "True":
     if hasattr(xtrain, '__iter__'):
         for i, x in enumerate(xtrain):
             print(f"DEBUG: xtrain[{i}] shape: {x.shape}, type: {type(x)}")
+    
+    # Debug: Print loss function and model configuration
+    print(f"DEBUG: Using loss function: {loss_function}")
+    print(f"DEBUG: Loss function type: {type(loss_function)}")
+    print(f"DEBUG: Model config - last_mlp: {hyperparam['model']['config'].get('last_mlp', 'NOT_FOUND')}")
+    print(f"DEBUG: Model config - output_mlp: {hyperparam['model']['config'].get('output_mlp', 'NOT_FOUND')}")
+    print(f"DEBUG: Model config - use_graph_state: {hyperparam['model']['config'].get('use_graph_state', 'NOT_FOUND')}")
     
     # need to change that to have ragged not numpy or tensor error
     hist = model.fit(xtrain, ytrain,
