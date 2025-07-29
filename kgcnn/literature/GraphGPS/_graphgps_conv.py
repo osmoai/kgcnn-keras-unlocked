@@ -91,7 +91,8 @@ class GraphGPSConv(tf.keras.layers.Layer):
             units=[units * 2, units],
             activation=[activation, None],
             use_bias=use_bias,
-            dropout=dropout
+            use_dropout=True,
+            rate=dropout
         )
         
         # Dropout layers
@@ -108,7 +109,7 @@ class GraphGPSConv(tf.keras.layers.Layer):
         neighbor_nodes = self.gather_outgoing([node_input, edge_index])
         
         # Aggregate neighbor features
-        aggregated = self.aggregate_edges([neighbor_nodes, edge_index, node_input])
+        aggregated = self.aggregate_edges([node_input, neighbor_nodes, edge_index])
         
         # Combine with self features
         combined = node_input + aggregated
@@ -132,7 +133,7 @@ class GraphGPSConv(tf.keras.layers.Layer):
         weighted_neighbors = neighbor_nodes * attention_scores
         
         # Aggregate
-        aggregated = self.aggregate_edges([weighted_neighbors, edge_index, node_input])
+        aggregated = self.aggregate_edges([node_input, weighted_neighbors, edge_index])
         
         return aggregated
     
@@ -142,7 +143,7 @@ class GraphGPSConv(tf.keras.layers.Layer):
         neighbor_nodes = self.gather_outgoing([node_input, edge_index])
         
         # Aggregate neighbor features
-        aggregated = self.aggregate_edges([neighbor_nodes, edge_index, node_input])
+        aggregated = self.aggregate_edges([node_input, neighbor_nodes, edge_index])
         
         # GIN: MLP(sum(neighbors) + (1 + eps) * self)
         eps = 1.0
@@ -156,10 +157,10 @@ class GraphGPSConv(tf.keras.layers.Layer):
         neighbor_nodes = self.gather_outgoing([node_input, edge_index])
         
         # Multiple aggregators: sum, mean, max, min
-        sum_agg = self.aggregate_edges([neighbor_nodes, edge_index, node_input])
-        mean_agg = AggregateLocalEdges(pooling_method="mean")([neighbor_nodes, edge_index, node_input])
-        max_agg = AggregateLocalEdges(pooling_method="max")([neighbor_nodes, edge_index, node_input])
-        min_agg = AggregateLocalEdges(pooling_method="min")([neighbor_nodes, edge_index, node_input])
+        sum_agg = self.aggregate_edges([node_input, neighbor_nodes, edge_index])
+        mean_agg = AggregateLocalEdges(pooling_method="mean")([node_input, neighbor_nodes, edge_index])
+        max_agg = AggregateLocalEdges(pooling_method="max")([node_input, neighbor_nodes, edge_index])
+        min_agg = AggregateLocalEdges(pooling_method="min")([node_input, neighbor_nodes, edge_index])
         
         # Concatenate all aggregations
         combined = tf.concat([sum_agg, mean_agg, max_agg, min_agg], axis=-1)

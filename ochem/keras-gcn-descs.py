@@ -2003,8 +2003,7 @@ elif architecture_name == 'GraphGPS':
                 "module_name": "kgcnn.data.datasets.ESOLDataset",
                 "config": {},
                 "methods": [
-                    {"set_attributes": {}},
-                    {"map_list": {"method": "set_edge_indices_reverse"}}
+                    {"set_attributes": {}}
                 ]
             },
             "data_unit": "mol/L"
@@ -2698,6 +2697,88 @@ elif architecture_name == 'AWARE':
                 {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
             )
             print(f"Added descriptor input with dimension {desc_dim} to AWARE")
+        hyper["model"]["config"]["use_graph_state"] = True
+
+# GraphGPS (Graph Generalization with Positional and Structural encoding) - General-purpose graph neural network
+elif architecture_name == 'GraphGPS':
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.GraphGPS",
+            "config": {
+                "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+                           {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                           {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}],
+                "input_node_embedding": {"input_dim": 95, "output_dim": 128},
+                "input_edge_embedding": {"input_dim": 5, "output_dim": 128},
+                "use_graph_state": False,
+                "graphgps_args": {
+                    "units": 128,
+                    "heads": 8,
+                    "dropout": 0.1,
+                    "use_bias": True,
+                    "activation": "relu",
+                    "mp_type": "gcn",
+                    "attn_type": "multihead",
+                    "use_skip_connection": True,
+                    "use_layer_norm": True,
+                    "use_batch_norm": False
+                },
+                "depth": 4,
+                "node_dim": 128,
+                "use_set2set": False,
+                "output_embedding": "graph",
+                "output_to_tensor": True,
+                "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                               "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+            }
+        },
+        "training": {
+            "fit": {
+                "batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2,
+                "callbacks": [
+                    {
+                        "class_name": "kgcnn>LinearLearningRateScheduler", "config": {
+                            "learning_rate_start": 0.001, "learning_rate_stop": 1e-05, "epo_min": 100, "epo": 200,
+                            "verbose": 0
+                        }
+                    }
+                ]
+            },
+            "compile": {
+                "optimizer": {"class_name": "Addons>AdamW", "config": {"lr": 0.001,
+                                                                       "weight_decay": 1e-05}
+                              }
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+            "execute_folds": 1
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "kgcnn_version": "2.0.3"
+        }
+    }
+    
+    # Add descriptor input if using descriptors
+    if use_descriptors and descs:
+        input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
+        if 'graph_descriptors' not in input_names:
+            hyper["model"]["config"]["inputs"].append(
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+            )
+            print(f"Added descriptor input with dimension {desc_dim} to GraphGPS")
+        hyper["model"]["config"]["input_graph_embedding"] = {"input_dim": 100, "output_dim": 64}
         hyper["model"]["config"]["use_graph_state"] = True
 
 # MoGAT (Multi-order Graph Attention Network) - Water solubility prediction and interpretation
@@ -4156,7 +4237,7 @@ if TRAIN == "True":
             print("Contrastive model created successfully!")
     else:
         # For models that support descriptors, we need to keep use_graph_state
-        if hyperparam["model"]["config"]["name"] in ['DMPNN', 'ChemProp', 'DGIN']:
+        if hyperparam["model"]["config"]["name"] in ['DMPNN', 'ChemProp', 'DGIN', 'GraphGPS']:
             print(f"Creating {hyperparam['model']['config']['name']} model with use_graph_state support")
             model = make_model(**hyperparam['model']["config"])
         else:

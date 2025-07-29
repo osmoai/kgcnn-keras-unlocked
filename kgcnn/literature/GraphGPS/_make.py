@@ -75,34 +75,20 @@ def make_graphgps_model(
         tf.keras.Model: GraphGPS model
     """
     
-    # Update model kwargs
-    model_kwargs = update_model_kwargs(
-        inputs=inputs,
-        input_embedding=input_embedding,
-        input_node_embedding=input_node_embedding,
-        input_edge_embedding=input_edge_embedding,
-        input_graph_embedding=input_graph_embedding,
-        cast_disjoint_kwargs=cast_disjoint_kwargs,
-        input_block_cfg=input_block_cfg,
-        use_graph_state=use_graph_state,
-        depth=depth,
-        node_dim=node_dim,
-        use_set2set=use_set2set,
-        set2set_args=set2set_args,
-        node_mlp_args=node_mlp_args,
-        edge_mlp_args=edge_mlp_args,
-        graph_mlp_args=graph_mlp_args,
-        use_node_embedding=use_node_embedding,
-        use_edge_embedding=use_edge_embedding,
-        use_graph_embedding=use_graph_embedding,
-        output_embedding=output_embedding,
-        output_to_tensor=output_to_tensor,
-        output_mlp=output_mlp,
-        output_scaling=output_scaling,
-        output_tensor_type=output_tensor_type,
-        output_tensor_kwargs=output_tensor_kwargs,
-        **kwargs
-    )
+    # Process inputs directly
+    if inputs is None:
+        raise ValueError("Inputs must be provided for GraphGPS model")
+    
+    # Extract input configurations
+    input_node = inputs[0] if len(inputs) > 0 else {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True}
+    input_edge = inputs[1] if len(inputs) > 1 else {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True}
+    input_edge_index = inputs[2] if len(inputs) > 2 else {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}
+    input_graph = inputs[3] if len(inputs) > 3 and use_graph_state else None
+    
+    # Process embeddings
+    input_node_embedding = input_node_embedding or input_embedding.get("node") if input_embedding else None
+    input_edge_embedding = input_edge_embedding or input_embedding.get("edge") if input_embedding else None
+    input_graph_embedding = input_graph_embedding or input_embedding.get("graph") if input_embedding else None
     
     # Default GraphGPS arguments
     if graphgps_args is None:
@@ -128,13 +114,13 @@ def make_graphgps_model(
         node_dim = graphgps_args.get("units", 200)
     
     # Input layers
-    node_input = tf.keras.layers.Input(**model_kwargs["input_node"])
-    edge_input = tf.keras.layers.Input(**model_kwargs["input_edge"])
-    edge_index_input = tf.keras.layers.Input(**model_kwargs["input_edge_index"])
+    node_input = tf.keras.layers.Input(**input_node)
+    edge_input = tf.keras.layers.Input(**input_edge)
+    edge_index_input = tf.keras.layers.Input(**input_edge_index)
     
     # Graph descriptor input (if using graph state)
-    if use_graph_state:
-        graph_descriptors_input = tf.keras.layers.Input(**model_kwargs["input_graph"])
+    if use_graph_state and input_graph is not None:
+        graph_descriptors_input = tf.keras.layers.Input(**input_graph)
     else:
         graph_descriptors_input = None
     
@@ -144,16 +130,16 @@ def make_graphgps_model(
         node_input, edge_input, edge_index_input = cast_layer([node_input, edge_input, edge_index_input])
     
     # Input embeddings
-    if use_node_embedding and model_kwargs["input_node_embedding"] is not None:
-        node_embedding = OptionalInputEmbedding(**model_kwargs["input_node_embedding"])
+    if use_node_embedding and input_node_embedding is not None:
+        node_embedding = OptionalInputEmbedding(**input_node_embedding)
         node_input = node_embedding(node_input)
     
-    if use_edge_embedding and model_kwargs["input_edge_embedding"] is not None:
-        edge_embedding = OptionalInputEmbedding(**model_kwargs["input_edge_embedding"])
+    if use_edge_embedding and input_edge_embedding is not None:
+        edge_embedding = OptionalInputEmbedding(**input_edge_embedding)
         edge_input = edge_embedding(edge_input)
     
-    if use_graph_embedding and model_kwargs["input_graph_embedding"] is not None:
-        graph_embedding = OptionalInputEmbedding(**model_kwargs["input_graph_embedding"])
+    if use_graph_embedding and input_graph_embedding is not None:
+        graph_embedding = OptionalInputEmbedding(**input_graph_embedding)
         graph_descriptors_input = graph_embedding(graph_descriptors_input)
     
     # GraphGPS layers
@@ -165,11 +151,19 @@ def make_graphgps_model(
         graphgps_layer = GraphGPSConv(**graphgps_args)
         
         if use_graph_state and graph_descriptors_input is not None:
-            # Add graph descriptors to node features
-            # Broadcast graph descriptors to all nodes
-            graph_descriptors_broadcast = tf.expand_dims(graph_descriptors_input, axis=1)
-            graph_descriptors_broadcast = tf.tile(graph_descriptors_broadcast, [1, tf.shape(node_features)[1], 1])
-            node_features = tf.concat([node_features, graph_descriptors_broadcast], axis=-1)
+            # Add graph descriptors to node features using a Lambda layer
+            def add_graph_descriptors(inputs):
+                node_feats, graph_desc = inputs
+                # Get the row lengths to know how many nodes per graph
+                row_lengths = node_feats.row_lengths()
+                # Repeat graph descriptors for each node in each graph
+                graph_desc_expanded = tf.repeat(graph_desc, row_lengths, axis=0)
+                # Concatenate along feature dimension
+                combined_values = tf.concat([node_feats.values, graph_desc_expanded], axis=-1)
+                # Convert back to ragged tensor
+                return tf.RaggedTensor.from_row_splits(combined_values, node_feats.row_splits)
+            
+            node_features = tf.keras.layers.Lambda(add_graph_descriptors)([node_features, graph_descriptors_input])
         
         # Apply GraphGPS layer
         node_features = graphgps_layer([node_features, edge_features, edge_index_input])
@@ -185,8 +179,13 @@ def make_graphgps_model(
         if use_set2set:
             if set2set_args is None:
                 set2set_args = {"channels": node_dim, "T": 3, "pooling_method": "sum"}
+            # Ensure channels match the node feature dimension
+            feature_dim = node_features.shape[-1]
+            if feature_dim is None:
+                feature_dim = node_dim  # fallback
+            set2set_args["channels"] = feature_dim
             pooling = PoolingSet2SetEncoder(**set2set_args)
-            out = pooling([node_features, edge_index_input])
+            out = pooling(node_features)
         else:
             pooling = PoolingNodes(pooling_method="sum")
             out = pooling([node_features, edge_index_input])
