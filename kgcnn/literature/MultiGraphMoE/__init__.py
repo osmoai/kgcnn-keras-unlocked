@@ -18,11 +18,14 @@ References:
 """
 
 from ._multigraph_moe_conv import MultiGraphMoEConv, GraphRepresentationLayer, ExpertRoutingLayer
-from ._make import make_model
+from ._make import make_model, model_default
+from ._make import make_contrastive_moe_model
 
 __all__ = [
     "MultiGraphMoEConv",
     "GraphRepresentationLayer", 
     "ExpertRoutingLayer",
-    "make_model"
+    "make_model",
+    "model_default",
+    "make_contrastive_moe_model"
 ] 

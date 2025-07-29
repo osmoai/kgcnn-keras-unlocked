@@ -3299,6 +3299,110 @@ elif architecture_name == 'ContrastivePNA':
         }
     }
 
+# ContrastiveMoE implementation - The most efficient approach!
+elif architecture_name == 'ContrastiveMoE':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found ContrastiveMoE architecture - Combining MoE with Contrastive Learning!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "ContrastiveMoE",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "multigraph_moe_args": {
+            "num_representations": 4,
+            "num_experts": 3,
+            "expert_types": ["gin", "gat", "gcn"],
+            "representation_types": ["original", "weighted", "augmented", "attention"],
+            "use_edge_weights": True,
+            "use_node_features": True,
+            "use_attention": True,
+            "dropout_rate": 0.1,
+            "temperature": 1.0,
+            "use_noise": True,
+            "noise_epsilon": 1e-2,
+            "units": 128
+        },
+        "depth": 3,
+        "verbose": 10,
+        "pooling_nodes_args": {"pooling_method": "sum"},
+        "use_graph_state": True,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]},
+        "contrastive_args": {
+            "use_contrastive_loss": True,
+            "contrastive_loss_type": "infonce",
+            "temperature": 0.1,
+            "contrastive_weight": 0.1,
+            "expert_diversity_weight": 0.05,  # Encourage expert diversity
+            "routing_entropy_weight": 0.01,    # Encourage balanced routing
+            "use_expert_contrastive": True,    # Apply contrastive learning to experts
+            "use_routing_contrastive": True    # Apply contrastive learning to routing
+        }
+    }
+    
+    # Update output dimensions and activation based on config file
+    print(f"Before update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"Before update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    model_config = update_output_dimensions(model_config, architecture_name)
+    print(f"After update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"After update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    
+    hyper = {
+        "model": {
+            "class_name": "make_contrastive_moe_model",
+            "module_name": "kgcnn.literature.MultiGraphMoE",  # Use MultiGraphMoE as base
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function,
+                "contrastive_weight": 0.1,
+                "temperature": 0.1,
+                "expert_diversity_weight": 0.05,
+                "routing_entropy_weight": 0.01
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
 # Print to visually make sure we have parsed correctly the parameters
 print("My parameters")
 print("Loss", nn_loss)
@@ -3504,6 +3608,9 @@ if TRAIN == "True":
         elif architecture_name == 'ContrastivePNA':
             from kgcnn.literature.PNA import make_contrastive_pna_model
             model = make_contrastive_pna_model(**hyperparam['model']["config"])
+        elif architecture_name == 'ContrastiveMoE':
+            from kgcnn.literature.MultiGraphMoE import make_contrastive_moe_model
+            model = make_contrastive_moe_model(**hyperparam['model']["config"])
         else:
             # For other contrastive models, use the complex ContrastiveGNN module
             model = make_model(**hyperparam['model']["config"])
@@ -3550,7 +3657,7 @@ if TRAIN == "True":
     
     # need to change this for class / regression
     if architecture_name.startswith('Contrastive'):
-        if architecture_name in ['ContrastiveGIN', 'ContrastiveGAT', 'ContrastiveDMPNN', 'ContrastiveAttFP', 'ContrastiveAddGNN', 'ContrastiveDGIN', 'ContrastivePNA']:
+        if architecture_name in ['ContrastiveGIN', 'ContrastiveGAT', 'ContrastiveDMPNN', 'ContrastiveAttFP', 'ContrastiveAddGNN', 'ContrastiveDGIN', 'ContrastivePNA', 'ContrastiveMoE']:
             # Our Contrastive models are already compiled with their custom loss
             print(f"{architecture_name} model already compiled with custom contrastive loss - skipping recompilation")
         else:
