@@ -82,7 +82,7 @@ def make_model(inputs: list = None,
     Returns:
         :obj:`tf.keras.models.Model`
     """
-    # GIN: [node_attributes, edge_indices, (optional) graph_desc]
+    # GIN: [node_attributes, edge_indices, (optional) graph_descriptors]
     node_input = ks.layers.Input(**inputs[0])
     edge_index_input = ks.layers.Input(**inputs[1])
     graph_desc_input = ks.layers.Input(**inputs[2]) if len(inputs) > 2 else None
@@ -197,7 +197,7 @@ def make_model_edge(inputs: list = None,
     Returns:
         :obj:`tf.keras.models.Model`
     """
-    # GINE: [node_attributes, edge_attributes, edge_indices, (optional) graph_desc]
+    # GINE: [node_attributes, edge_attributes, edge_indices, (optional) graph_descriptors]
     node_input = ks.layers.Input(**inputs[0])
     edge_input = ks.layers.Input(**inputs[1])
     edge_index_input = ks.layers.Input(**inputs[2])
