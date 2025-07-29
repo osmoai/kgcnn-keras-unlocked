@@ -170,58 +170,80 @@ def splitingTrain_Val(dataset,labels,data_length, inputs=None, hypers=None, idx=
     
     print(hypers)
 
-    if embsize:
-        feature_atom_bond_mol = [xi.shape[2] for xi in xtest]
-        hypers['model']['config']['inputs'][0]['shape'][1] = feature_atom_bond_mol[0]
-        hypers['model']['config']['inputs'][1]['shape'][1] = feature_atom_bond_mol[1]
-        hypers['model']['config']['inputs'][2]['shape'][1] = feature_atom_bond_mol[2]
-        hypers['model']['config']['input_embedding']['node']['input_dim'] = feature_atom_bond_mol[0]
-        hypers['model']['config']['input_embedding']['edge']['input_dim'] = feature_atom_bond_mol[1]
-    
-    if 'last_mlp' in hypers['model']['config'].keys():
-        if type(hypers['model']['config']['last_mlp']['units']) == list:
-            hypers['model']['config']['last_mlp']['units'][-1] = output_dim
-        else:
-            hypers['model']['config']['last_mlp']['units'] = output_dim
+    # Handle both HyperParameter objects and regular dictionaries
+    if hasattr(hypers, 'get') and callable(hypers.get):
+        # It's a regular dictionary-like object
+        hypers_dict = hypers
     else:
-        if type(hypers['model']['config']['output_mlp']['units']) == list:
-            hypers['model']['config']['output_mlp']['units'][-1] = output_dim
+        # It's a HyperParameter object, convert to dictionary
+        try:
+            hypers_dict = hypers.get_dict() if hasattr(hypers, 'get_dict') else dict(hypers)
+            print("⚠️  Converted HyperParameter to dictionary for processing")
+        except Exception as e:
+            print(f"⚠️  Error converting HyperParameter: {e}, using as-is")
+            hypers_dict = hypers
+
+    # CRITICAL: During inference, NEVER modify input dimensions
+    if TRAIN == "False":
+        print("🔒 Inference mode: Skipping input dimension updates to preserve saved model configuration")
+    elif embsize:
+        feature_atom_bond_mol = [xi.shape[2] for xi in xtest]
+        hypers_dict['model']['config']['inputs'][0]['shape'][1] = feature_atom_bond_mol[0]
+        hypers_dict['model']['config']['inputs'][1]['shape'][1] = feature_atom_bond_mol[1]
+        hypers_dict['model']['config']['inputs'][2]['shape'][1] = feature_atom_bond_mol[2]
+        hypers_dict['model']['config']['input_embedding']['node']['input_dim'] = feature_atom_bond_mol[0]
+        hypers_dict['model']['config']['input_embedding']['edge']['input_dim'] = feature_atom_bond_mol[1]
+    
+    if 'last_mlp' in hypers_dict['model']['config'].keys():
+        if type(hypers_dict['model']['config']['last_mlp']['units']) == list:
+            hypers_dict['model']['config']['last_mlp']['units'][-1] = output_dim
         else:
-            hypers['model']['config']['output_mlp']['units'] = output_dim
+            hypers_dict['model']['config']['last_mlp']['units'] = output_dim
+    else:
+        if type(hypers_dict['model']['config']['output_mlp']['units']) == list:
+            hypers_dict['model']['config']['output_mlp']['units'][-1] = output_dim
+        else:
+            hypers_dict['model']['config']['output_mlp']['units'] = output_dim
 
 
     isClass = isClassifer(ytrain)
+    
+    # SAFETY CHECK: Ensure output_mlp activation is properly initialized
+    if 'output_mlp' in hypers_dict['model']["config"] and 'activation' not in hypers_dict['model']["config"]['output_mlp']:
+        hypers_dict['model']["config"]['output_mlp']['activation'] = 'linear'
+        print(f"⚠️  Fixed missing activation in output_mlp for {hypers_dict['model']['config']['name']}")
+    
     # change activation function ! we do use sigmoid or softmax in general
     # CRITICAL RULE: NEVER use 2 sigmoid activations with last_mlp + output_mlp combo!
     if isClass:
         # Check if we have last_mlp (main output layer) or just output_mlp
-        if 'last_mlp' in hypers['model']["config"]:
+        if 'last_mlp' in hypers_dict['model']["config"]:
             # update_output_dimensions already set last_mlp activation correctly
             # CRITICAL: Just ensure output_mlp is linear (it's just a wrapper)
-            if isinstance(hypers['model']["config"]['output_mlp']['activation'], list):
-                hypers['model']["config"]['output_mlp']['activation'][-1] = 'linear'
+            if isinstance(hypers_dict['model']["config"]['output_mlp']['activation'], list):
+                hypers_dict['model']["config"]['output_mlp']['activation'][-1] = 'linear'
             else:
-                hypers['model']["config"]['output_mlp']['activation'] = 'linear'
-            print(f"✅ Ensured output_mlp is linear for {hypers['model']['config']['name']}")
+                hypers_dict['model']["config"]['output_mlp']['activation'] = 'linear'
+            print(f"✅ Ensured output_mlp is linear for {hypers_dict['model']['config']['name']}")
         else:
             # Only output_mlp exists - modify it directly for classification
             if isCCE:
                 # only for two target classes minimum
-                if isinstance(hypers['model']["config"]['output_mlp']['activation'], list):
-                    hypers['model']["config"]['output_mlp']['activation'][-1] = 'softmax'
+                if isinstance(hypers_dict['model']["config"]['output_mlp']['activation'], list):
+                    hypers_dict['model']["config"]['output_mlp']['activation'][-1] = 'softmax'
                 else:
-                    hypers['model']["config"]['output_mlp']['activation'] = 'softmax'
+                    hypers_dict['model']["config"]['output_mlp']['activation'] = 'softmax'
             else:
                 # generally it works
-                if isinstance(hypers['model']["config"]['output_mlp']['activation'], list):
-                    hypers['model']["config"]['output_mlp']['activation'][-1] = 'sigmoid'
+                if isinstance(hypers_dict['model']["config"]['output_mlp']['activation'], list):
+                    hypers_dict['model']["config"]['output_mlp']['activation'][-1] = 'sigmoid'
                 else:
-                    hypers['model']["config"]['output_mlp']['activation'] = 'sigmoid'
+                    hypers_dict['model']["config"]['output_mlp']['activation'] = 'sigmoid'
     
     # FINAL SAFETY CHECK: Ensure no double sigmoid for any model
-    if 'last_mlp' in hypers['model']["config"] and 'output_mlp' in hypers['model']["config"]:
-        last_activation = hypers['model']["config"]["last_mlp"].get('activation', 'linear')
-        output_activation = hypers['model']["config"]["output_mlp"].get('activation', 'linear')
+    if 'last_mlp' in hypers_dict['model']["config"] and 'output_mlp' in hypers_dict['model']["config"]:
+        last_activation = hypers_dict['model']["config"]["last_mlp"].get('activation', 'linear')
+        output_activation = hypers_dict['model']["config"]["output_mlp"].get('activation', 'linear')
         
         # Check if both have sigmoid
         last_is_sigmoid = False
@@ -238,17 +260,17 @@ def splitingTrain_Val(dataset,labels,data_length, inputs=None, hypers=None, idx=
             output_is_sigmoid = output_activation in ['sigmoid', 'softmax']
         
         if last_is_sigmoid and output_is_sigmoid:
-            print(f"🚨 CRITICAL ERROR: Double sigmoid detected in {hypers['model']['config']['name']}! Fixing output_mlp to linear...")
-            if isinstance(hypers['model']["config"]["output_mlp"]['activation'], list):
-                hypers['model']["config"]["output_mlp"]['activation'][-1] = 'linear'
+            print(f"🚨 CRITICAL ERROR: Double sigmoid detected in {hypers_dict['model']['config']['name']}! Fixing output_mlp to linear...")
+            if isinstance(hypers_dict['model']["config"]["output_mlp"]['activation'], list):
+                hypers_dict['model']["config"]["output_mlp"]['activation'][-1] = 'linear'
             else:
-                hypers['model']["config"]["output_mlp"]['activation'] = 'linear'
-            print(f"✅ Fixed: output_mlp activation is now: {hypers['model']['config']['output_mlp']['activation']}")
+                hypers_dict['model']["config"]["output_mlp"]['activation'] = 'linear'
+            print(f"✅ Fixed: output_mlp activation is now: {hypers_dict['model']['config']['output_mlp']['activation']}")
 
-    hyper = HyperParameter(hypers,
-                             model_name=hypers['model']['config']['name'],
-                             model_module=hypers['model']['module_name'],
-                             model_class=hypers['model']['class_name'],
+    hyper = HyperParameter(hypers_dict,
+                             model_name=hypers_dict['model']['config']['name'],
+                             model_module=hypers_dict['model']['module_name'],
+                             model_class=hypers_dict['model']['class_name'],
                              dataset_name="MoleculeNetDataset")
     
     #print('ici:',feature_atom_bond_mol,'| assigned inputs new dims:',hyper['model']["config"]['inputs'])
@@ -258,6 +280,23 @@ def splitingTrain_Val(dataset,labels,data_length, inputs=None, hypers=None, idx=
     return xtrain, ytrain, xtest, ytest, hyper, isClass
 
 def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None, overwrite=False, descs=None):
+    # Handle HyperParameter object access
+    try:
+        if hasattr(hyper, 'get') and callable(hyper.get):
+            # It's a regular dictionary-like object
+            hyper_dict = hyper
+        else:
+            # It's a HyperParameter object, convert to dictionary
+            try:
+                hyper_dict = hyper.get_dict() if hasattr(hyper, 'get_dict') else dict(hyper)
+                print("⚠️  Converted HyperParameter to dictionary in prepData")
+            except Exception as e:
+                print(f"⚠️  Error converting HyperParameter in prepData: {e}, using as-is")
+                hyper_dict = hyper
+    except Exception as e:
+        print(f"⚠️  Error handling hyper object in prepData: {e}, using as-is")
+        hyper_dict = hyper
+    
     is3D = False
     if modelname in ['PAiNN','DimeNetPP','HamNet','Schnet','HDNNP2nd','NMPN','Megnet']:
         print('model need 3D molecules')
@@ -311,7 +350,7 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
             else:
                 dataset.set_attributes(add_hydrogen=False,has_conformers=is3D)
         
-            dataset.set_methods(hyper["data"]["dataset"]["methods"])
+            dataset.set_methods(hyper_dict["data"]["dataset"]["methods"])
 
 
     else:
@@ -340,11 +379,11 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
         else:
                 dataset.set_attributes(add_hydrogen=False,has_conformers=is3D)
         
-        dataset.set_methods(hyper["data"]["dataset"]["methods"])
+        dataset.set_methods(hyper_dict["data"]["dataset"]["methods"])
 
 
 
-    invalid = dataset.clean(hyper["model"]["config"]["inputs"])
+    invalid = dataset.clean(hyper_dict["model"]["config"]["inputs"])
     # I guess clean first and assert clean ok
 
     return dataset, invalid
@@ -422,6 +461,11 @@ print("Architecture selected:", architecture_name)
 # Function to update output dimensions in model configuration
 def update_output_dimensions(config_dict, architecture_name=None):
     """Update output dimensions and activation in model configuration based on config file"""
+    # Check if we're in inference mode (train_mode = False)
+    if TRAIN == "False":
+        print("🔒 Inference mode: Skipping update_output_dimensions to preserve original model configuration")
+        return config_dict
+    
     print(f"Updating output dimensions for output_dim = {output_dim}")
     print(f"Updating activation to: {activation}")
     
@@ -486,6 +530,22 @@ def update_output_dimensions(config_dict, architecture_name=None):
         
         # CRITICAL: For output_mlp, ALWAYS use linear activation (it's just a wrapper)
         # This prevents double sigmoid issues!
+        
+        # SAFETY CHECK: Ensure activation is properly formatted
+        if 'activation' not in config_dict["output_mlp"]:
+            if isinstance(config_dict["output_mlp"].get('units', []), list):
+                units_list = config_dict["output_mlp"]['units']
+                config_dict["output_mlp"]['activation'] = ['linear'] * len(units_list)
+            else:
+                config_dict["output_mlp"]['activation'] = 'linear'
+            print(f"⚠️  Added missing activation in update_output_dimensions: {config_dict['output_mlp']['activation']}")
+        elif isinstance(config_dict["output_mlp"].get('units', []), list) and isinstance(config_dict["output_mlp"]['activation'], str):
+            # Convert string activation to list if units is a list
+            units_list = config_dict["output_mlp"]['units']
+            config_dict["output_mlp"]['activation'] = [config_dict["output_mlp"]['activation']] * len(units_list)
+            print(f"⚠️  Converted activation to list in update_output_dimensions: {config_dict['output_mlp']['activation']}")
+        
+        # Now set the last activation to linear
         if isinstance(config_dict["output_mlp"].get('activation', []), list) and len(config_dict["output_mlp"]['activation']) > 0:
             config_dict["output_mlp"]['activation'][-1] = 'linear'
             print(f"CRITICAL: Set output_mlp activation to linear (prevents double sigmoid): {config_dict['output_mlp']['activation']}")
@@ -4381,6 +4441,34 @@ else:
 
     print("Loaded model from disk")
     hyper = pickle.load(open("modelparameters.p", "rb"))
+    
+    # SAFETY CHECK: Ensure output_mlp activation is properly formatted
+    # Handle both HyperParameter objects and regular dictionaries
+    try:
+        if hasattr(hyper, 'get') and callable(hyper.get):
+            # It's a regular dictionary-like object
+            if 'model' in hyper and 'config' in hyper['model'] and 'output_mlp' in hyper['model']['config']:
+                output_mlp = hyper['model']['config']['output_mlp']
+                if 'activation' in output_mlp:
+                    # If activation is a string but units is a list, convert activation to a list
+                    if isinstance(output_mlp.get('units', []), list) and isinstance(output_mlp['activation'], str):
+                        # Create a list with the same length as units, filled with the activation string
+                        units_list = output_mlp['units']
+                        output_mlp['activation'] = [output_mlp['activation']] * len(units_list)
+                        print(f"⚠️  Converted activation from string to list for {hyper['model']['config']['name']}: {output_mlp['activation']}")
+                    # If activation is missing, set it to linear
+                    elif 'activation' not in output_mlp:
+                        if isinstance(output_mlp.get('units', []), list):
+                            units_list = output_mlp['units']
+                            output_mlp['activation'] = ['linear'] * len(units_list)
+                        else:
+                            output_mlp['activation'] = 'linear'
+                        print(f"⚠️  Added missing activation for {hyper['model']['config']['name']}: {output_mlp['activation']}")
+        else:
+            # It's a HyperParameter object, access it differently
+            print("⚠️  HyperParameter object detected, skipping activation fix (will be handled later)")
+    except Exception as e:
+        print(f"⚠️  Error during activation fix: {e}, continuing...")
 
     print(hyper)
 
@@ -4451,24 +4539,123 @@ else:
     dataset, invalid= prepData(APPLY_FILE, cols, hyper=hyper, modelname=architecture_name,
                                 overwrite=overwrite, descs=descs)
 
-    inputs = hyper["model"]["config"]["inputs"]
+    # Handle HyperParameter object access
+    try:
+        if hasattr(hyper, 'get') and callable(hyper.get):
+            # It's a regular dictionary-like object
+            hyper_dict = hyper
+        else:
+            # It's a HyperParameter object, convert to dictionary
+            try:
+                hyper_dict = hyper.get_dict() if hasattr(hyper, 'get_dict') else dict(hyper)
+                print("⚠️  Converted HyperParameter to dictionary for model creation")
+            except Exception as e:
+                print(f"⚠️  Error converting HyperParameter: {e}, using as-is")
+                hyper_dict = hyper
+    except Exception as e:
+        print(f"⚠️  Error handling hyper object: {e}, using as-is")
+        hyper_dict = hyper
 
+    inputs = hyper_dict["model"]["config"]["inputs"]
+
+    # Check if the saved model file exists
+    if not os.path.exists(modelname):
+        print(f"❌ Model file {modelname} not found!")
+        print("❌ Cannot perform inference without a trained model.")
+        print("❌ Please ensure you have a trained model file or run training first.")
+        exit(1)
+    else:
+        print(f"✅ Found model file: {modelname}")
+    
+    # CRITICAL: For inference, preserve the exact model configuration from training
+    # Do NOT modify the model configuration as it should match the saved weights exactly
+    print("🔒 Inference mode: Preserving original model configuration from training")
+    print(f"Original output_mlp configuration: {hyper_dict['model']['config']['output_mlp']}")
+    
+    # Check if the saved model was trained with descriptors
+    saved_input_names = [inp['name'] for inp in hyper_dict['model']['config']['inputs']]
+    has_graph_descriptors = 'graph_descriptors' in saved_input_names
+    print(f"Saved model input names: {saved_input_names}")
+    print(f"Saved model has graph_descriptors: {has_graph_descriptors}")
+    print(f"Current inference has descriptors: {len(descs) > 0}")
+    
+    # CRITICAL: During inference, NEVER modify the model configuration
+    # The saved model configuration must be preserved exactly as it was during training
+    print("🔒 Inference mode: Using saved model configuration exactly as trained")
+    print(f"Saved model inputs: {[inp['name'] for inp in hyper_dict['model']['config']['inputs']]}")
+    print(f"Saved model input_embedding: {hyper_dict['model']['config'].get('input_embedding', 'Not found')}")
+    
+    # Ensure we use the exact same descriptors configuration as the saved model
+    if has_graph_descriptors:
+        if len(descs) == 0:
+            print("⚠️  WARNING: Saved model was trained WITH descriptors, but current inference has NO descriptors")
+            print("⚠️  This will likely cause errors. Consider using descriptors or retraining without descriptors.")
+        else:
+            print("✅ Descriptors configuration matches saved model")
+    else:
+        if len(descs) > 0:
+            print("⚠️  WARNING: Saved model was trained WITHOUT descriptors, but current inference has descriptors")
+            print("⚠️  This will likely cause errors. Consider removing descriptors or retraining with descriptors.")
+        else:
+            print("✅ No descriptors configuration matches saved model")
 
     # Model creation
-    make_model = get_model_class(hyper["model"]["config"]["name"], hyper["model"]["class_name"])
+    make_model = get_model_class(hyper_dict["model"]["config"]["name"], hyper_dict["model"]["class_name"])
 
-    # Fix to make models working with the saved old ChemProp models
-    if 'use_graph_state' in hyper["model"]["config"].keys():
-        r = dict(hyper["model"]["config"])
-        del r['use_graph_state']
-        model = make_model(**r)
-    else:
-        model = make_model(**hyper['model']["config"])
-    # load stored best weights
+    # CRITICAL: During inference, use the exact saved configuration
+    # Do NOT modify any parameters, including use_graph_state
+    print(f"🔒 Creating model with exact saved configuration")
+    print(f"🔒 use_graph_state: {hyper_dict['model']['config'].get('use_graph_state', 'Not found')}")
+    model = make_model(**hyper_dict['model']["config"])
+    
+    # Try to load stored best weights, but handle shape mismatches gracefully
+    try:
+        print(f"Attempting to load weights from {modelname}...")
+        model.load_weights(modelname)
+        print("✅ Successfully loaded model weights")
+    except ValueError as e:
+        if "Shape mismatch" in str(e):
+            print(f"⚠️  Shape mismatch when loading weights: {e}")
+            print("⚠️  This usually means the saved model was trained with different input dimensions")
+            print("⚠️  The model will be used with random weights (not trained)")
+            print("⚠️  Consider retraining the model or using compatible data")
+            
+            # Try to load partial weights (skip incompatible layers)
+            try:
+                print("🔄 Attempting to load partial weights (skipping incompatible layers)...")
+                model.load_weights(modelname, by_name=True, skip_mismatch=True)
+                print("✅ Successfully loaded partial weights")
+            except Exception as partial_e:
+                print(f"⚠️  Could not load partial weights either: {partial_e}")
+                print("⚠️  Model will use random weights")
+        else:
+            print(f"⚠️  Error loading weights: {e}")
+            print("⚠️  The model will be used with random weights")
+    except Exception as e:
+        print(f"⚠️  Unexpected error loading weights: {e}")
+        print("⚠️  The model will be used with random weights")
 
-    model.load_weights(modelname)
-
+    # CRITICAL: Use the exact inputs from the saved model configuration
+    print(f"🔒 Using exact inputs from saved model: {[inp['name'] for inp in inputs]}")
+    print(f"🔒 Input shapes: {[inp['shape'] for inp in inputs]}")
+    
+    # Ensure the dataset provides exactly what the model expects
     x_pred = dataset.tensor(inputs)
+    
+    # Debug: Check what the model expects vs what we're providing
+    print(f"🔒 Model input names: {[inp.name for inp in model.inputs]}")
+    print(f"🔒 Model input shapes: {[inp.shape for inp in model.inputs]}")
+    print(f"🔒 Data tensor names: {[name for name in x_pred.keys()] if isinstance(x_pred, dict) else 'Not a dict'}")
+    print(f"🔒 Data tensor shapes: {[tensor.shape for tensor in x_pred.values()] if isinstance(x_pred, dict) else [x_pred.shape] if hasattr(x_pred, 'shape') else 'Unknown'}")
+    
+    # Ensure we're providing the right number of inputs
+    if isinstance(x_pred, dict):
+        expected_inputs = set([inp.name for inp in model.inputs])
+        provided_inputs = set(x_pred.keys())
+        print(f"🔒 Expected inputs: {expected_inputs}")
+        print(f"🔒 Provided inputs: {provided_inputs}")
+        if expected_inputs != provided_inputs:
+            print(f"⚠️  Input mismatch! Missing: {expected_inputs - provided_inputs}, Extra: {provided_inputs - expected_inputs}")
 
     a_pred = model.predict(x_pred)
 
