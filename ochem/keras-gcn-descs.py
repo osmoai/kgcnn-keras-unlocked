@@ -608,26 +608,22 @@ elif architecture_name == 'GAT':
         },
         "training": {
             "fit": {
-                "batch_size": 32, "epochs": 500, "validation_freq": 2, "verbose": 2,
+                "batch_size": 32, "epochs": 2, "validation_freq": 2, "verbose": 2,
                 "callbacks": [
                     {"class_name": "kgcnn>LinearLearningRateScheduler", "config": {
-                        "learning_rate_start": 0.5e-03, "learning_rate_stop": 1e-05, "epo_min": 250, "epo": 500,
+                        "learning_rate_start": 0.5e-03, "learning_rate_stop": 1e-05, "epo_min": 1, "epo": 2,
                         "verbose": 0}
                      }
                 ]
             },
             "compile": {
                 "optimizer": {"class_name": "Adam", "config": {"lr": 5e-03}},
-                "loss": "mean_absolute_error"
+                "loss": "mean_absolute_error",
+                "metrics": ["accuracy", "balanced_accuracy", "precision", "recall"]
             },
             "cross_validation": {"class_name": "KFold",
                                  "config": {"n_splits": 5, "random_state": None, "shuffle": True}}
         },
-            "compile": {
-                "optimizer": {"class_name": "Adam", "config": {"lr": 5e-03}},
-                "loss": "mean_absolute_error",
-                "metrics": ["accuracy", "balanced_accuracy", "precision", "recall"]
-            },
         "data": {
             "dataset": {
                 "class_name": "MoleculeNetDataset",
