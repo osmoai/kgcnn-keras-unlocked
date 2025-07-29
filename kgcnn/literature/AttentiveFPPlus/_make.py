@@ -118,9 +118,12 @@ def make_model(inputs: list = None,
         # Pooling
         n = PoolingNodesAttentivePlus(pooling_method="sum")(n)
         
-        # GRU update for molecule embedding
+        # Reshape for GRU (add sequence dimension)
+        n = ks.layers.Reshape((1, -1))(n)
+        
+        # GRU layers for molecule embedding
         for i in range(depthmol):
-            n = GRUUpdate(attention_args["units"])(n)
+            n = ks.layers.GRU(attention_args["units"], return_sequences=(i < depthmol - 1), return_state=False)(n)
             if dropout > 0:
                 n = Dropout(dropout)(n)
     
@@ -142,9 +145,7 @@ def make_model(inputs: list = None,
     # Output MLP
     out = MLP(**output_mlp)(out)
 
-    # Output casting
-    if output_to_tensor:
-        out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
+    # No need for ChangeTensorType since PoolingNodesAttentivePlus already returns a regular tensor
 
     model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input] + ([graph_descriptors_input] if graph_descriptors_input is not None else []),
                            outputs=out)

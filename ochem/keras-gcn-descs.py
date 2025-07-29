@@ -1777,7 +1777,7 @@ elif architecture_name == 'rGINE':
                               }
                               }
                 },
-                "loss": "mean_absolute_error"
+                "loss": "BCEmask"
             },
             "cross_validation": {"class_name": "KFold",
                                  "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
