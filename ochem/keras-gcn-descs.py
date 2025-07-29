@@ -2974,7 +2974,13 @@ elif architecture_name == 'ContrastiveDMPNN':
             "contrastive_weight": 0.1,
             "num_views": 2,
             "use_diversity_loss": False,
-            "use_auxiliary_loss": False
+            "use_auxiliary_loss": False,
+            "augmentation_type": "molclr",  # Options: molclr, graphcl, mocl, digmol, claps, random
+            "augmentation_args": {
+                "node_mask_rate": 0.15,
+                "edge_drop_rate": 0.15,
+                "feature_noise_std": 0.01
+            }
         }
     }
     
