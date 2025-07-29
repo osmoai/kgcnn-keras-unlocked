@@ -20,6 +20,7 @@ References:
 from ._multigraph_moe_conv import MultiGraphMoEConv, GraphRepresentationLayer, ExpertRoutingLayer
 from ._make import make_model, model_default
 from ._make import make_contrastive_moe_model
+from ._make import make_configurable_moe_model
 
 __all__ = [
     "MultiGraphMoEConv",
@@ -27,5 +28,6 @@ __all__ = [
     "ExpertRoutingLayer",
     "make_model",
     "model_default",
-    "make_contrastive_moe_model"
+    "make_contrastive_moe_model",
+    "make_configurable_moe_model"
 ] 

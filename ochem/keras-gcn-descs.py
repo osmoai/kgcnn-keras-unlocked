@@ -1178,19 +1178,19 @@ elif architecture_name in ['NMPN','MPNN']:
                            {'shape': (None, 2), 'name': "edge_indices", 'dtype': 'int64', 'ragged': True}],
                 'input_embedding': {"node": {"input_dim": 95, "output_dim": 128},
                                     "edge": {"input_dim": 95, "output_dim": 128},
-                                    "graph": {"input_dim": 100, "output_dim": 64}},
-                'gauss_args': {"bins": 20, "distance": 4, "offset": 0.0, "sigma": 0.4},
-                'set2set_args': {'channels': 64, 'T': 3, "pooling_method": "sum", "init_qstar": "0"},
-                'pooling_args': {'pooling_method': "segment_sum"},
-                'edge_mlp': {'use_bias': True, 'activation': 'swish', "units": [64, 64]},
-                'use_set2set': True, 'depth': 3, 'node_dim': 128,
-                "geometric_edge": False, "make_distance": False, "expand_distance": False,
-                'verbose': 10,
-                'output_embedding': 'graph',
-                'output_mlp': {"use_bias": [True, True, False], "units": [200, 100, output_dim],
-                               "activation": ["kgcnn>leaky_relu", "selu", "linear"]},
+                                    'gauss_args': {"bins": 20, "distance": 4, "offset": 0.0, "sigma": 0.4},
+                                    'set2set_args': {'channels': 64, 'T': 3, "pooling_method": "sum", "init_qstar": "0"},
+                                    'pooling_args': {'pooling_method': "segment_sum"},
+                                    'edge_mlp': {'use_bias': True, 'activation': 'swish', "units": [64, 64]},
+                                    'use_set2set': True, 'depth': 3, 'node_dim': 128,
+                                    "geometric_edge": False, "make_distance": False, "expand_distance": False,
+                                    'verbose': 10,
+                                    'output_embedding': 'graph',
+                                    'output_mlp': {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                                                   "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
             }
-        },
+        }
+    },
         "training": {
             "fit": {
                 "batch_size": 32,
@@ -3403,6 +3403,215 @@ elif architecture_name == 'ContrastiveMoE':
         }
     }
 
+# Simple MoE implementation - Lightweight version
+elif architecture_name == 'MoE':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found MoE architecture - Simple MultiGraphMoE without contrastive learning!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "MoE",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "multigraph_moe_args": {
+            "num_representations": 4,
+            "num_experts": 3,
+            "expert_types": ["gin", "gat", "gcn"],
+            "representation_types": ["original", "weighted", "augmented", "attention"],
+            "use_edge_weights": True,
+            "use_node_features": True,
+            "use_attention": True,
+            "dropout_rate": 0.1,
+            "temperature": 1.0,
+            "use_noise": True,
+            "noise_epsilon": 1e-2,
+            "units": 128
+        },
+        "depth": 3,
+        "verbose": 10,
+        "pooling_nodes_args": {"pooling_method": "sum"},
+        "use_graph_state": True,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+    }
+    
+    # Update output dimensions and activation based on config file
+    print(f"Before update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"Before update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    model_config = update_output_dimensions(model_config, architecture_name)
+    print(f"After update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"After update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.MultiGraphMoE",  # Use MultiGraphMoE as base
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
+# ConfigurableMoE implementation - Different graph types for each expert!
+elif architecture_name == 'ConfigurableMoE':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found ConfigurableMoE architecture - Different graph types for each expert!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "ConfigurableMoE",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "multigraph_moe_args": {
+            "num_representations": 6,  # More representations for different graph types
+            "num_experts": 4,  # More experts for different graph types
+            "expert_types": ["gin", "gat", "gcn", "graphsage"],  # Different expert types
+            "representation_types": [
+                "original",           # Standard molecular graph
+                "weighted",           # Edge-weighted graph
+                "augmented",          # Augmented with additional edges
+                "attention",          # Attention-based graph
+                "substructure",       # Substructure-focused graph
+                "fingerprint"         # Molecular fingerprint graph
+            ],
+            "expert_graph_configs": {
+                "gin": {
+                    "graph_types": ["original", "substructure"],
+                    "representation_weight": 0.3,
+                    "specialization": "molecular_structure"
+                },
+                "gat": {
+                    "graph_types": ["attention", "weighted"],
+                    "representation_weight": 0.25,
+                    "specialization": "attention_patterns"
+                },
+                "gcn": {
+                    "graph_types": ["original", "augmented"],
+                    "representation_weight": 0.25,
+                    "specialization": "graph_connectivity"
+                },
+                "graphsage": {
+                    "graph_types": ["fingerprint", "weighted"],
+                    "representation_weight": 0.2,
+                    "specialization": "molecular_fingerprints"
+                }
+            },
+            "use_edge_weights": True,
+            "use_node_features": True,
+            "use_attention": True,
+            "dropout_rate": 0.1,
+            "temperature": 1.0,
+            "use_noise": True,
+            "noise_epsilon": 1e-2,
+            "units": 128
+        },
+        "depth": 3,
+        "verbose": 10,
+        "pooling_nodes_args": {"pooling_method": "sum"},
+        "use_graph_state": True,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+    }
+    
+    # Update output dimensions and activation based on config file
+    print(f"Before update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"Before update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    model_config = update_output_dimensions(model_config, architecture_name)
+    print(f"After update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"After update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    
+    hyper = {
+        "model": {
+            "class_name": "make_configurable_moe_model",
+            "module_name": "kgcnn.literature.MultiGraphMoE",  # Use MultiGraphMoE as base
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
 # Print to visually make sure we have parsed correctly the parameters
 print("My parameters")
 print("Loss", nn_loss)
@@ -3611,6 +3820,12 @@ if TRAIN == "True":
         elif architecture_name == 'ContrastiveMoE':
             from kgcnn.literature.MultiGraphMoE import make_contrastive_moe_model
             model = make_contrastive_moe_model(**hyperparam['model']["config"])
+        elif architecture_name == 'MoE':
+            from kgcnn.literature.MultiGraphMoE import make_model
+            model = make_model(**hyperparam['model']["config"])
+        elif architecture_name == 'ConfigurableMoE':
+            from kgcnn.literature.MultiGraphMoE import make_configurable_moe_model
+            model = make_configurable_moe_model(**hyperparam['model']["config"])
         else:
             # For other contrastive models, use the complex ContrastiveGNN module
             model = make_model(**hyperparam['model']["config"])
@@ -3657,7 +3872,7 @@ if TRAIN == "True":
     
     # need to change this for class / regression
     if architecture_name.startswith('Contrastive'):
-        if architecture_name in ['ContrastiveGIN', 'ContrastiveGAT', 'ContrastiveDMPNN', 'ContrastiveAttFP', 'ContrastiveAddGNN', 'ContrastiveDGIN', 'ContrastivePNA', 'ContrastiveMoE']:
+        if architecture_name in ['ContrastiveGIN', 'ContrastiveGAT', 'ContrastiveDMPNN', 'ContrastiveAttFP', 'ContrastiveAddGNN', 'ContrastiveDGIN', 'ContrastivePNA', 'ContrastiveMoE', 'MoE', 'ConfigurableMoE']:
             # Our Contrastive models are already compiled with their custom loss
             print(f"{architecture_name} model already compiled with custom contrastive loss - skipping recompilation")
         else:

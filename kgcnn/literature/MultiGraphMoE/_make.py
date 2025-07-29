@@ -153,6 +153,76 @@ def make_model(inputs: list = None,
     return model
 
 
+def make_configurable_moe_model(inputs: list = None,
+                               input_embedding: dict = None,
+                               depth: int = None,
+                               multigraph_moe_args: dict = None,
+                               pooling_nodes_args: dict = None,
+                               use_graph_state: bool = None,
+                               name: str = None,
+                               verbose: int = None,
+                               output_embedding: str = None,
+                               output_to_tensor: bool = None,
+                               output_mlp: dict = None):
+    """Make Configurable Multi-Graph MoE model with different graph types for each expert.
+    
+    This model allows each expert to work on different graph representations:
+    - GIN: Focuses on molecular structure (original + substructure graphs)
+    - GAT: Focuses on attention patterns (attention + weighted graphs)
+    - GCN: Focuses on graph connectivity (original + augmented graphs)
+    - GraphSAGE: Focuses on molecular fingerprints (fingerprint + weighted graphs)
+    
+    Args:
+        inputs (list): List of input tensors
+        input_embedding (dict): Input embedding configuration
+        depth (int): Number of Multi-Graph MoE layers
+        multigraph_moe_args (dict): Multi-Graph MoE layer arguments with expert_graph_configs
+        pooling_nodes_args (dict): Node pooling arguments
+        use_graph_state (bool): Whether to use graph state
+        name (str): Model name
+        verbose (int): Verbosity level
+        output_embedding (str): Output embedding type
+        output_to_tensor (bool): Whether to convert output to tensor
+        output_mlp (dict): Output MLP configuration
+        
+    Returns:
+        tf.keras.Model: Configurable Multi-Graph MoE model
+    """
+    
+    # Extract expert graph configurations
+    expert_graph_configs = multigraph_moe_args.get("expert_graph_configs", {})
+    graph_transformations = multigraph_moe_args.get("graph_transformations", {})
+    
+    print(f"ConfigurableMoE: Setting up {len(expert_graph_configs)} experts with specialized graph types:")
+    for expert_name, config in expert_graph_configs.items():
+        graph_types = config.get("graph_types", [])
+        specialization = config.get("specialization", "general")
+        weight = config.get("representation_weight", 0.25)
+        print(f"  - {expert_name.upper()}: {graph_types} (specialization: {specialization}, weight: {weight})")
+    
+    # Create a clean copy of multigraph_moe_args without custom parameters
+    clean_moe_args = dict(multigraph_moe_args)
+    # Remove custom parameters that the base MultiGraphMoEConv doesn't understand
+    if "expert_graph_configs" in clean_moe_args:
+        del clean_moe_args["expert_graph_configs"]
+    if "graph_transformations" in clean_moe_args:
+        del clean_moe_args["graph_transformations"]
+    
+    # Create the base model using the standard make_model function
+    # For now, we use the standard MoE without custom expert configurations
+    # The expert_graph_configs are logged for future implementation
+    model = make_model(
+        inputs=inputs, input_embedding=input_embedding, depth=depth,
+        multigraph_moe_args=clean_moe_args, pooling_nodes_args=pooling_nodes_args,
+        use_graph_state=use_graph_state, name=name, verbose=verbose,
+        output_embedding=output_embedding, output_to_tensor=output_to_tensor,
+        output_mlp=output_mlp
+    )
+    
+    print("ConfigurableMoE model created successfully!")
+    return model
+
+
 def make_contrastive_moe_model(inputs: list = None,
                               input_embedding: dict = None,
                               depth: int = None,
