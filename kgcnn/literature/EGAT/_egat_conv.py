@@ -117,8 +117,10 @@ class EGATLayer(GraphBaseLayer):
         attention_outputs = []
         for attention_head in self.multi_head_attention:
             if edge_features is not None:
-                attended = attention_head([node_features, neighbor_features, edge_features, edge_indices])
+                # AttentionHeadGAT expects [node, edge, edge_indices]
+                attended = attention_head([node_features, edge_features, edge_indices])
             else:
+                # If no edge features, use neighbor features as edge features
                 attended = attention_head([node_features, neighbor_features, edge_indices])
             attention_outputs.append(attended)
         
@@ -131,8 +133,8 @@ class EGATLayer(GraphBaseLayer):
         # Output projection
         output = self.output_projection(multi_head_output)
         
-        # Skip connection
-        output = self.lazy_add([node_attributes, output])
+        # Skip connection (use transformed node features for consistent dimensions)
+        output = self.lazy_add([node_features, output])
         
         # Apply dropout
         if self.dropout:

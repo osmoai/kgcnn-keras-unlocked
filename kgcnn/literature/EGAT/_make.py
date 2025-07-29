@@ -47,7 +47,8 @@ def make_model(inputs: list = None,
                use_graph_state: bool = False,
                output_embedding: str = None,
                output_to_tensor: bool = None,
-               output_mlp: dict = None
+               output_mlp: dict = None,
+               name: str = None
                ):
     r"""Make `EGAT` graph network via functional API.
     Default parameters can be found in :obj:`kgcnn.literature.EGAT.model_default`.
@@ -95,9 +96,11 @@ def make_model(inputs: list = None,
     n = OptionalInputEmbedding(**input_embedding["node"])(node_input)
     e = OptionalInputEmbedding(**input_embedding["edge"])(edge_input)
     
-    # Graph state embedding if provided
+    # Process graph_descriptors if provided (use Dense layer for continuous values)
     if use_graph_state and graph_descriptors_input is not None:
-        graph_embedding = OptionalInputEmbedding(**input_embedding.get("graph", {"input_dim": 100, "output_dim": 64}))(graph_descriptors_input)
+        graph_embedding = Dense(input_embedding.get("graph", {"output_dim": 64})["output_dim"], 
+                               activation='relu', 
+                               use_bias=True)(graph_descriptors_input)
     else:
         graph_embedding = None
 
@@ -121,11 +124,11 @@ def make_model(inputs: list = None,
     # Output MLP
     out = MLP(**output_mlp)(out)
 
-    # Output casting
-    if output_to_tensor:
+    # Output casting - only if output is still ragged
+    if output_to_tensor and hasattr(out, 'ragged_rank') and out.ragged_rank > 0:
         out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
 
     model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input] + ([graph_descriptors_input] if graph_descriptors_input is not None else []),
-                           outputs=out)
+                           outputs=out, name=name)
     model.compile()
     return model 
