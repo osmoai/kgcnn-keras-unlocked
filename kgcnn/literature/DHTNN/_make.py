@@ -8,7 +8,7 @@ import tensorflow as tf
 from kgcnn.layers.modules import Dense, Activation, Dropout
 from kgcnn.layers.pooling import PoolingNodes
 from kgcnn.layers.mlp import MLP
-from kgcnn.layers_core.modules import OptionalInputEmbedding
+from kgcnn.layers.modules import OptionalInputEmbedding
 from kgcnn.model.utils import update_model_kwargs
 from ._dhtnn_conv import DHTNNConv, DoubleHeadAttention
 
@@ -103,9 +103,9 @@ def make_model(inputs: list = None,
     
     # Graph state embedding if provided
     if use_graph_state and graph_descriptors_input is not None:
-        graph_embedding = OptionalInputEmbedding(
-            **input_embedding.get("graph", {"input_dim": 100, "output_dim": 64})
-        )(graph_descriptors_input)
+        graph_embedding = Dense(input_embedding.get("graph", {"output_dim": 64})["output_dim"],
+                               activation='relu',
+                               use_bias=True)(graph_descriptors_input)
     else:
         graph_embedding = None
     

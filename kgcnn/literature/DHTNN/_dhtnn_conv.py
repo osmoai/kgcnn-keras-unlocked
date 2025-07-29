@@ -7,7 +7,8 @@ The double-head attention combines local and global attention mechanisms.
 
 import tensorflow as tf
 from kgcnn.layers.base import GraphBaseLayer
-from kgcnn.layers.modules import Dense, Activation, Dropout, LayerNormalization
+from kgcnn.layers.modules import Dense, Activation, Dropout
+from tensorflow.keras.layers import LayerNormalization
 from kgcnn.layers.attention import AttentionHeadGAT
 from kgcnn.layers.aggr import AggregateLocalEdges
 from kgcnn.layers.gather import GatherNodesOutgoing
@@ -60,7 +61,6 @@ class DoubleHeadAttention(ks.layers.Layer):
                 use_edge_features=use_edge_features,
                 use_final_activation=False,
                 has_self_loops=True,
-                dropout_rate=dropout_rate,
                 activation=activation,
                 use_bias=use_bias
             )
@@ -74,7 +74,6 @@ class DoubleHeadAttention(ks.layers.Layer):
                 use_edge_features=use_edge_features,
                 use_final_activation=False,
                 has_self_loops=True,
-                dropout_rate=dropout_rate,
                 activation=activation,
                 use_bias=use_bias
             )
