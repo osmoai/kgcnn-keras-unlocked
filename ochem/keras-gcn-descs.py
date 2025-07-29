@@ -214,17 +214,23 @@ def splitingTrain_Val(dataset,labels,data_length, inputs=None, hypers=None, idx=
         print(f"⚠️  Fixed missing activation in output_mlp for {hypers_dict['model']['config']['name']}")
     
     # change activation function ! we do use sigmoid or softmax in general
-    # CRITICAL RULE: NEVER use 2 sigmoid activations with last_mlp + output_mlp combo!
+    # CRITICAL RULE: For classification, sigmoid should be in the FINAL output layer
     if isClass:
         # Check if we have last_mlp (main output layer) or just output_mlp
         if 'last_mlp' in hypers_dict['model']["config"]:
-            # update_output_dimensions already set last_mlp activation correctly
-            # CRITICAL: Just ensure output_mlp is linear (it's just a wrapper)
-            if isinstance(hypers_dict['model']["config"]['output_mlp']['activation'], list):
-                hypers_dict['model']["config"]['output_mlp']['activation'][-1] = 'linear'
+            # For models with last_mlp, ensure last_mlp has linear activation
+            # and output_mlp has sigmoid (final output)
+            if isinstance(hypers_dict['model']["config"]['last_mlp']['activation'], list):
+                hypers_dict['model']["config"]['last_mlp']['activation'][-1] = 'linear'
             else:
-                hypers_dict['model']["config"]['output_mlp']['activation'] = 'linear'
-            print(f"✅ Ensured output_mlp is linear for {hypers_dict['model']['config']['name']}")
+                hypers_dict['model']["config"]['last_mlp']['activation'] = 'linear'
+            
+            # Set output_mlp to sigmoid (final output layer)
+            if isinstance(hypers_dict['model']["config"]['output_mlp']['activation'], list):
+                hypers_dict['model']["config"]['output_mlp']['activation'][-1] = 'sigmoid'
+            else:
+                hypers_dict['model']["config"]['output_mlp']['activation'] = 'sigmoid'
+            print(f"✅ Set last_mlp to linear and output_mlp to sigmoid for {hypers_dict['model']['config']['name']}")
         else:
             # Only output_mlp exists - modify it directly for classification
             if isCCE:
@@ -240,12 +246,12 @@ def splitingTrain_Val(dataset,labels,data_length, inputs=None, hypers=None, idx=
                 else:
                     hypers_dict['model']["config"]['output_mlp']['activation'] = 'sigmoid'
     
-    # FINAL SAFETY CHECK: Ensure no double sigmoid for any model
+    # FINAL SAFETY CHECK: Ensure proper sigmoid placement for classification
     if 'last_mlp' in hypers_dict['model']["config"] and 'output_mlp' in hypers_dict['model']["config"]:
         last_activation = hypers_dict['model']["config"]["last_mlp"].get('activation', 'linear')
         output_activation = hypers_dict['model']["config"]["output_mlp"].get('activation', 'linear')
         
-        # Check if both have sigmoid
+        # Check if both have sigmoid (this should not happen)
         last_is_sigmoid = False
         output_is_sigmoid = False
         
@@ -260,12 +266,13 @@ def splitingTrain_Val(dataset,labels,data_length, inputs=None, hypers=None, idx=
             output_is_sigmoid = output_activation in ['sigmoid', 'softmax']
         
         if last_is_sigmoid and output_is_sigmoid:
-            print(f"🚨 CRITICAL ERROR: Double sigmoid detected in {hypers_dict['model']['config']['name']}! Fixing output_mlp to linear...")
-            if isinstance(hypers_dict['model']["config"]["output_mlp"]['activation'], list):
-                hypers_dict['model']["config"]["output_mlp"]['activation'][-1] = 'linear'
-            else:
-                hypers_dict['model']["config"]["output_mlp"]['activation'] = 'linear'
-            print(f"✅ Fixed: output_mlp activation is now: {hypers_dict['model']['config']['output_mlp']['activation']}")
+            print(f"🚨 WARNING: Double sigmoid detected in {hypers_dict['model']['config']['name']}!")
+            print(f"🚨 This might cause issues. Consider using only one sigmoid at the final output.")
+        elif not last_is_sigmoid and output_is_sigmoid:
+            print(f"✅ Perfect: Sigmoid is correctly placed in final output layer for {hypers_dict['model']['config']['name']}")
+        elif last_is_sigmoid and not output_is_sigmoid:
+            print(f"⚠️  WARNING: Sigmoid is in last_mlp but not in output_mlp for {hypers_dict['model']['config']['name']}")
+            print(f"⚠️  This might cause issues with classification output.")
 
     hyper = HyperParameter(hypers_dict,
                              model_name=hypers_dict['model']['config']['name'],
