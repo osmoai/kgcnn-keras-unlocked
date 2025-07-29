@@ -46,7 +46,8 @@ def make_model(inputs: list = None,
                use_graph_state: bool = False,
                output_embedding: str = None,
                output_to_tensor: bool = None,
-               output_mlp: dict = None
+               output_mlp: dict = None,
+               name: str = None
                ):
     r"""Make `PNA` graph network via functional API.
     Default parameters can be found in :obj:`kgcnn.literature.PNA.model_default`.
@@ -100,11 +101,6 @@ def make_model(inputs: list = None,
     for i in range(depth):
         n = PNALayer(**pna_args)([n, edge_index_input])
 
-    # Graph state fusion if provided
-    if use_graph_state and graph_embedding is not None:
-        # Concatenate or add graph embedding
-        n = ks.layers.Concatenate()([n, graph_embedding])
-
     # Output embedding choice
     if output_embedding == "graph":
         out = PoolingNodesPNA(pooling_method="sum")(n)
@@ -113,12 +109,23 @@ def make_model(inputs: list = None,
     else:
         raise ValueError("Unsupported output embedding for mode %s" % output_embedding)
 
+    # Graph state fusion if provided (after pooling to graph level)
+    if graph_descriptors_input is not None:
+        if use_graph_state:
+            # Use graph embedding when use_graph_state is True
+            if graph_embedding is not None:
+                out = ks.layers.Concatenate()([out, graph_embedding])
+        else:
+            # Direct concatenation of graph descriptors when use_graph_state is False
+            out = ks.layers.Concatenate()([out, graph_descriptors_input])
+
     # Output MLP
     out = MLP(**output_mlp)(out)
 
     # Output casting
     if output_to_tensor:
-        out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
+        if hasattr(out, 'to_tensor'):
+            out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
 
     model = ks.models.Model(inputs=[node_input, edge_index_input] + ([graph_descriptors_input] if graph_descriptors_input is not None else []),
                            outputs=out)

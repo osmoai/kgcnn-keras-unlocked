@@ -1,4 +1,10 @@
-from ._make import make_model
-from ._pna_conv import PNALayer
+from ._make import make_model, model_default
+from ._make_fixed import make_model_fixed
+from ._make_fixed import make_contrastive_pna_model
 
-__all__ = ["make_model", "PNALayer"] 
+__all__ = [
+    "make_model",
+    "model_default",
+    "make_model_fixed",
+    "make_contrastive_pna_model"
+] 

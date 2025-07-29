@@ -104,13 +104,40 @@ def make_contrastive_gnn_model(
     
     # Input embeddings
     n = OptionalInputEmbedding(**input_embedding["node"]) if input_embedding and "node" in input_embedding else inputs[0]
-    e = OptionalInputEmbedding(**input_embedding["edge"]) if input_embedding and "edge" in input_embedding else inputs[1]
-    ed = inputs[2]
     
-    # Graph state (descriptors)
+    # Handle edge features - create simple constant edge features since we don't have them
+    from kgcnn.layers.modules import DenseEmbedding
+    from kgcnn.layers.base import GraphBaseLayer
+    
+    class ConstantEdgeFeatures(GraphBaseLayer):
+        """Create constant edge features."""
+        def __init__(self, units=128, **kwargs):
+            super(ConstantEdgeFeatures, self).__init__(**kwargs)
+            self.units = units
+            
+        def call(self, inputs, training=None):
+            # Create constant edge features
+            edge_indices = inputs
+            # Get the shape of edge_indices and create constant features
+            edge_features = tf.ones_like(edge_indices, dtype=tf.float32)
+            # Expand to match the units dimension
+            edge_features = tf.expand_dims(edge_features, axis=-1)
+            edge_features = tf.tile(edge_features, [1, 1, self.units])
+            return edge_features
+    
+    # Create edge features
+    e = ConstantEdgeFeatures(units=units)(inputs[1])
+    ed = inputs[1]  # edge_indices
+    
+    # Graph state (descriptors) - handle the case where graph_descriptors is at different positions
     graph_embedding = None
-    if use_graph_state and len(inputs) > 3:
-        graph_embedding = OptionalInputEmbedding(**input_embedding["graph"])(inputs[3]) if input_embedding and "graph" in input_embedding else inputs[3]
+    if use_graph_state:
+        if len(inputs) > 3:
+            # We have separate graph_descriptors input
+            graph_embedding = OptionalInputEmbedding(**input_embedding["graph"])(inputs[3]) if input_embedding and "graph" in input_embedding else inputs[3]
+        elif len(inputs) == 3 and "graph" in input_embedding:
+            # Graph descriptors might be in the embedding
+            graph_embedding = OptionalInputEmbedding(**input_embedding["graph"])(inputs[2]) if input_embedding and "graph" in input_embedding else None
     
     # Create contrastive GNN layers based on type
     if gnn_type.lower() == "gin":

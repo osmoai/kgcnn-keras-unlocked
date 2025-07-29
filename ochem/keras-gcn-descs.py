@@ -319,6 +319,8 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
         
         dataset.set_methods(hyper["data"]["dataset"]["methods"])
 
+
+
     invalid = dataset.clean(hyper["model"]["config"]["inputs"])
     # I guess clean first and assert clean ok
 
@@ -1991,8 +1993,8 @@ elif architecture_name == 'GraphGPS':
 elif architecture_name == 'PNA':
     hyper = {
         "model": {
-            "class_name": "make_model",
-            "module_name": "kgcnn.literature.PNA",
+            "class_name": "make_model_fixed",
+            "module_name": "kgcnn.literature.PNA._make_fixed",
             "config": {
                 "name": "PNA",
                 "inputs": [
@@ -2005,7 +2007,7 @@ elif architecture_name == 'PNA':
                 "pna_args": {"units": 128, "use_bias": True, "activation": "relu",
                              "aggregators": ["mean", "max", "min", "std"],
                              "scalers": ["identity", "amplification", "attenuation"],
-                             "delta": 1.0, "dropout_rate": 0.1},
+                             "dropout_rate": 0.1},
                 "depth": 4,
                 "verbose": 10,
                 "use_graph_state": True,
@@ -2602,21 +2604,119 @@ elif architecture_name == 'ContrastiveGIN':
             "node": {"input_dim": 95, "output_dim": 128},
             "graph": {"input_dim": 100, "output_dim": 64}
         },
-        "use_graph_state": True,
+        "gin_args": {
+            "units": 128,
+            "use_bias": True,
+            "activation": "relu",
+            "use_normalization": True,
+            "normalization_technique": "graph_batch"
+        },
         "depth": 5,
-        "units": 128,
+        "verbose": 10,
+        "use_graph_state": True,
         "output_embedding": "graph",
+        "output_to_tensor": True,
         "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
                      "activation": ["kgcnn>leaky_relu", "selu", "linear"]},
         "contrastive_args": {
-            "num_views": 2,
             "use_contrastive_loss": True,
             "contrastive_loss_type": "infonce",
             "temperature": 0.1,
-            "use_diversity_loss": True,
-            "use_auxiliary_loss": True,
-            "edge_drop_rate": 0.1,
-            "node_mask_rate": 0.1
+            "contrastive_weight": 0.1
+        }
+    }
+    
+    # Update output dimensions and activation based on config file
+    print(f"Before update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"Before update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    model_config = update_output_dimensions(model_config, architecture_name)
+    print(f"After update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"After update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    
+    hyper = {
+            "model": {
+                "class_name": "make_contrastive_gin_model",
+                "module_name": "kgcnn.literature.GIN",  # Use regular GIN as base
+                "config": model_config
+            },
+            "training": {
+                "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                        },
+                "compile": {
+                    "optimizer": {"class_name": "Adam",
+                                  "config": {"lr": {
+                                      "class_name": "ExponentialDecay",
+                                      "config": {"initial_learning_rate": 0.001,
+                                                 "decay_steps": 1600,
+                                                 "decay_rate": 0.5, "staircase": False}
+                                  }
+                                  }
+                    },
+                    "loss": loss_function,
+                    "contrastive_weight": 0.1,
+                    "temperature": 0.1
+                },
+                "cross_validation": {"class_name": "KFold",
+                                     "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+            },
+            "data": {
+                "dataset": {
+                    "class_name": "MoleculeNetDataset",
+                    "config": {},
+                    "methods": [
+                        {"set_attributes": {}}
+                    ]
+                },
+                "data_unit": "mol/L"
+            },
+            "info": {
+                "postfix": "",
+                "postfix_file": "",
+                "kgcnn_version": "3.0.0"
+            }
+        }
+
+# ContrastiveGAT implementation
+elif architecture_name == 'ContrastiveGAT':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found ContrastiveGAT architecture!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "ContrastiveGAT",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "attention_args": {
+            "units": 128,
+            "use_bias": True,
+            "activation": "relu",
+            "use_edge_features": True
+        },
+        "pooling_nodes_args": {
+            "pooling_method": "sum"
+        },
+        "depth": 3,
+        "attention_heads_num": 8,
+        "attention_heads_concat": True,
+        "verbose": 10,
+        "use_graph_state": True,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]},
+        "contrastive_args": {
+            "use_contrastive_loss": True,
+            "contrastive_loss_type": "infonce",
+            "temperature": 0.1,
+            "contrastive_weight": 0.1
         }
     }
     
@@ -2629,8 +2729,8 @@ elif architecture_name == 'ContrastiveGIN':
     
     hyper = {
         "model": {
-            "class_name": "make_contrastive_gin_model",
-            "module_name": "kgcnn.literature.ContrastiveGNN",
+            "class_name": "make_contrastive_gat_model",
+            "module_name": "kgcnn.literature.GAT",  # Use regular GAT as base
             "config": model_config
         },
         "training": {
@@ -2648,23 +2748,17 @@ elif architecture_name == 'ContrastiveGIN':
                 },
                 "loss": loss_function,
                 "contrastive_weight": 0.1,
-                "diversity_weight": 0.01,
-                "alignment_weight": 0.01,
-                "use_regression_aware": False,
-                "target_similarity_threshold": 0.1,
-                "similarity_metric": "euclidean"
+                "temperature": 0.1
             },
             "cross_validation": {"class_name": "KFold",
                                  "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
         },
         "data": {
             "dataset": {
-                "class_name": "ESOLDataset",
-                "module_name": "kgcnn.data.datasets.ESOLDataset",
+                "class_name": "MoleculeNetDataset",
                 "config": {},
                 "methods": [
-                    {"set_attributes": {}},
-                    {"map_list": {"method": "set_edge_indices_reverse"}}
+                    {"set_attributes": {}}
                 ]
             },
             "data_unit": "mol/L"
@@ -2676,6 +2770,534 @@ elif architecture_name == 'ContrastiveGIN':
         }
     }
 
+
+
+# ContrastiveDMPNN implementation
+elif architecture_name == 'ContrastiveDMPNN':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found ContrastiveDMPNN architecture!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "ContrastiveDMPNN",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [None, 1], "name": "edge_pairs", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "pooling_args": {
+            "pooling_method": "sum"
+        },
+        "edge_initialize": {
+            "units": 128,
+            "use_bias": True,
+            "activation": "relu"
+        },
+        "edge_dense": {
+            "units": 128,
+            "use_bias": True,
+            "activation": "linear"
+        },
+        "edge_activation": {
+            "activation": "relu"
+        },
+        "node_dense": {
+            "units": 128,
+            "use_bias": True,
+            "activation": "relu"
+        },
+        "dropout": {
+            "rate": 0.1
+        },
+        "depth": 3,
+        "verbose": 10,
+        "use_graph_state": True,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]},
+        "contrastive_args": {
+            "use_contrastive_loss": True,
+            "contrastive_loss_type": "infonce",
+            "temperature": 0.1,
+            "contrastive_weight": 0.1
+        }
+    }
+    
+    # Update output dimensions and activation based on config file
+    print(f"Before update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"Before update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    model_config = update_output_dimensions(model_config, architecture_name)
+    print(f"After update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"After update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    
+    hyper = {
+        "model": {
+            "class_name": "make_contrastive_dmpnn_model",
+            "module_name": "kgcnn.literature.DMPNN",  # Use regular DMPNN as base
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function,
+                "contrastive_weight": 0.1,
+                "temperature": 0.1
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
+# ContrastiveAttFP implementation
+elif architecture_name == 'ContrastiveAttFP':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found ContrastiveAttFP architecture!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "ContrastiveAttFP",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "attention_args": {
+            "units": 128,
+            "use_bias": True,
+            "activation": "relu"
+        },
+        "depthato": 3,
+        "depthmol": 3,
+        "dropout": 0.1,
+        "verbose": 10,
+        "use_graph_state": True,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]},
+        "contrastive_args": {
+            "use_contrastive_loss": True,
+            "contrastive_loss_type": "infonce",
+            "temperature": 0.1,
+            "contrastive_weight": 0.1
+        }
+    }
+    
+    # Update output dimensions and activation based on config file
+    print(f"Before update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"Before update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    model_config = update_output_dimensions(model_config, architecture_name)
+    print(f"After update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"After update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    
+    hyper = {
+        "model": {
+            "class_name": "make_contrastive_attentivefp_model",
+            "module_name": "kgcnn.literature.AttentiveFP",  # Use regular AttentiveFP as base
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function,
+                "contrastive_weight": 0.1,
+                "temperature": 0.1
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
+# ContrastiveAddGNN implementation
+elif architecture_name == 'ContrastiveAddGNN':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found ContrastiveAddGNN architecture!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "ContrastiveAddGNN",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [None, 2], "name": "edge_image", "dtype": "int64", "ragged": True},
+            {"shape": [None, 3, 3], "name": "lattice", "dtype": "float32", "ragged": False},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "geometric_edge": False,
+        "make_distance": False,
+        "expand_distance": False,
+        "gauss_args": {
+            "bins": 20,
+            "distance": 4.0,
+            "sigma": 0.4,
+            "offset": 0.0,
+            "dimension": 1
+        },
+        "set2set_args": {
+            "channels": 64,
+            "T": 3,
+            "pooling_method": "mean",
+            "init_method": "mean"
+        },
+        "pooling_args": {
+            "pooling_method": "sum"
+        },
+        "addgnn_args": {
+            "units": 128,
+            "use_bias": True,
+            "activation": "relu"
+        },
+        "use_set2set": False,
+        "node_dim": 128,
+        "depth": 3,
+        "verbose": 10,
+        "use_graph_state": True,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]},
+        "contrastive_args": {
+            "use_contrastive_loss": True,
+            "contrastive_loss_type": "infonce",
+            "temperature": 0.1,
+            "contrastive_weight": 0.1
+        }
+    }
+    
+    # Update output dimensions and activation based on config file
+    print(f"Before update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"Before update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    model_config = update_output_dimensions(model_config, architecture_name)
+    print(f"After update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"After update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    
+    hyper = {
+        "model": {
+            "class_name": "make_contrastive_addgnn_model",
+            "module_name": "kgcnn.literature.AddGNN",  # Use regular AddGNN as base
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function,
+                "contrastive_weight": 0.1,
+                "temperature": 0.1
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
+# ContrastiveDGIN implementation
+elif architecture_name == 'ContrastiveDGIN':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found ContrastiveDGIN architecture!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "ContrastiveDGIN",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [None, 1], "name": "edge_pairs", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "pooling_args": {
+            "pooling_method": "sum"
+        },
+        "edge_initialize": {
+            "units": 128,
+            "use_bias": True,
+            "activation": "relu"
+        },
+        "edge_dense": {
+            "units": 128,
+            "use_bias": True,
+            "activation": "linear"
+        },
+        "edge_activation": {
+            "activation": "relu"
+        },
+        "node_dense": {
+            "units": 128,
+            "use_bias": True,
+            "activation": "relu"
+        },
+        "dropoutDMPNN": {
+            "rate": 0.1
+        },
+        "dropoutGIN": {
+            "rate": 0.1
+        },
+        "depthDMPNN": 3,
+        "depthGIN": 3,
+        "gin_args": {
+            "pooling_method": "sum",
+            "epsilon_learnable": False
+        },
+        "gin_mlp": {
+            "units": [128, 128],
+            "use_bias": True,
+            "activation": ["relu", "linear"],
+            "use_normalization": True,
+            "normalization_technique": "graph_batch"
+        },
+        "last_mlp": {
+            "units": [128, 128],
+            "use_bias": True,
+            "activation": ["relu", "linear"],
+            "use_normalization": True,
+            "normalization_technique": "graph_batch"
+        },
+        "verbose": 10,
+        "use_graph_state": True,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]},
+        "contrastive_args": {
+            "use_contrastive_loss": True,
+            "contrastive_loss_type": "infonce",
+            "temperature": 0.1,
+            "contrastive_weight": 0.1
+        }
+    }
+    
+    # Update output dimensions and activation based on config file
+    print(f"Before update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"Before update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    model_config = update_output_dimensions(model_config, architecture_name)
+    print(f"After update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"After update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    
+    hyper = {
+        "model": {
+            "class_name": "make_contrastive_dgin_model",
+            "module_name": "kgcnn.literature.DGIN",  # Use regular DGIN as base
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function,
+                "contrastive_weight": 0.1,
+                "temperature": 0.1
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
+# ContrastivePNA implementation
+elif architecture_name == 'ContrastivePNA':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found ContrastivePNA architecture!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "ContrastivePNA",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "pna_args": {
+            "aggregators": ["mean", "max", "min", "std"],
+            "scalers": ["identity", "amplification", "attenuation"],
+            "units": 128,
+            "use_bias": True,
+            "activation": "relu"
+        },
+        "depth": 3,
+        "verbose": 10,
+        "use_graph_state": True,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]},
+        "contrastive_args": {
+            "use_contrastive_loss": True,
+            "contrastive_loss_type": "infonce",
+            "temperature": 0.1,
+            "contrastive_weight": 0.1
+        }
+    }
+    
+    # Update output dimensions and activation based on config file
+    print(f"Before update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"Before update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    model_config = update_output_dimensions(model_config, architecture_name)
+    print(f"After update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"After update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    
+    hyper = {
+        "model": {
+            "class_name": "make_contrastive_pna_model",
+            "module_name": "kgcnn.literature.PNA",  # Use our fixed PNA as base
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function,
+                "contrastive_weight": 0.1,
+                "temperature": 0.1
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
 
 # Print to visually make sure we have parsed correctly the parameters
 print("My parameters")
@@ -2859,9 +3481,32 @@ if TRAIN == "True":
     model = None
     # Make model
     if architecture_name.startswith('Contrastive'):
-        # For contrastive models, pass the config directly
+        # For contrastive models, use the appropriate contrastive function
         print(f"Creating model with config: {hyperparam['model']['config']}")
-        model = make_model(**hyperparam['model']["config"])
+        if architecture_name == 'ContrastiveGIN':
+            from kgcnn.literature.GIN import make_contrastive_gin_model
+            model = make_contrastive_gin_model(**hyperparam['model']["config"])
+        elif architecture_name == 'ContrastiveGAT':
+            from kgcnn.literature.GAT import make_contrastive_gat_model
+            model = make_contrastive_gat_model(**hyperparam['model']["config"])
+        elif architecture_name == 'ContrastiveDMPNN':
+            from kgcnn.literature.DMPNN import make_contrastive_dmpnn_model
+            model = make_contrastive_dmpnn_model(**hyperparam['model']["config"])
+        elif architecture_name == 'ContrastiveAttFP':
+            from kgcnn.literature.AttentiveFP import make_contrastive_attentivefp_model
+            model = make_contrastive_attentivefp_model(**hyperparam['model']["config"])
+        elif architecture_name == 'ContrastiveAddGNN':
+            from kgcnn.literature.AddGNN import make_contrastive_addgnn_model
+            model = make_contrastive_addgnn_model(**hyperparam['model']["config"])
+        elif architecture_name == 'ContrastiveDGIN':
+            from kgcnn.literature.DGIN import make_contrastive_dgin_model
+            model = make_contrastive_dgin_model(**hyperparam['model']["config"])
+        elif architecture_name == 'ContrastivePNA':
+            from kgcnn.literature.PNA import make_contrastive_pna_model
+            model = make_contrastive_pna_model(**hyperparam['model']["config"])
+        else:
+            # For other contrastive models, use the complex ContrastiveGNN module
+            model = make_model(**hyperparam['model']["config"])
         print("Contrastive model created successfully!")
     else:
         # For models that support descriptors, we need to keep use_graph_state
@@ -2870,12 +3515,13 @@ if TRAIN == "True":
             model = make_model(**hyperparam['model']["config"])
         else:
             # Fix to make models working with the saved old ChemProp models
-            if 'use_graph_state' in hyperparam["model"]["config"].keys():
-                r = dict(hyperparam["model"]["config"])
+            r = dict(hyperparam["model"]["config"])
+            # Remove parameters that might not be accepted by all models
+            if 'use_graph_state' in r:
                 del r['use_graph_state']
-                model = make_model(**r)
-            else:
-                model = make_model(**hyperparam['model']["config"])
+            if 'name' in r:
+                del r['name']
+            model = make_model(**r)
 
     opt = tf.optimizers.legacy.Adam(learning_rate=cfg_learning_rate)
     
@@ -2904,21 +3550,25 @@ if TRAIN == "True":
     
     # need to change this for class / regression
     if architecture_name.startswith('Contrastive'):
-        # Use special compilation for contrastive models
-        from kgcnn.literature.ContrastiveGNN import compile_contrastive_gnn_model
-        compile_contrastive_gnn_model(
-            model=model,
-            optimizer=opt,
-            learning_rate=cfg_learning_rate,
-            loss=loss_function,
-            metrics=['accuracy'] if lossdef in ["BCEmask", "CCEmask", "binary_crossentropy", "categorical_crossentropy"] else [metric_fn],
-            contrastive_weight=hyperparam['training']['compile'].get('contrastive_weight', 0.1),
-            diversity_weight=hyperparam['training']['compile'].get('diversity_weight', 0.01),
-            alignment_weight=hyperparam['training']['compile'].get('alignment_weight', 0.01),
-            use_regression_aware=hyperparam['training']['compile'].get('use_regression_aware', False),
-            target_similarity_threshold=hyperparam['training']['compile'].get('target_similarity_threshold', 0.1),
-            similarity_metric=hyperparam['training']['compile'].get('similarity_metric', 'euclidean')
-        )
+        if architecture_name in ['ContrastiveGIN', 'ContrastiveGAT', 'ContrastiveDMPNN', 'ContrastiveAttFP', 'ContrastiveAddGNN', 'ContrastiveDGIN', 'ContrastivePNA']:
+            # Our Contrastive models are already compiled with their custom loss
+            print(f"{architecture_name} model already compiled with custom contrastive loss - skipping recompilation")
+        else:
+            # Use special compilation for other contrastive models
+            from kgcnn.literature.ContrastiveGNN import compile_contrastive_gnn_model
+            compile_contrastive_gnn_model(
+                model=model,
+                optimizer=opt,
+                learning_rate=cfg_learning_rate,
+                loss=loss_function,
+                metrics=['accuracy'] if lossdef in ["BCEmask", "CCEmask", "binary_crossentropy", "categorical_crossentropy"] else [metric_fn],
+                contrastive_weight=hyperparam['training']['compile'].get('contrastive_weight', 0.1),
+                diversity_weight=hyperparam['training']['compile'].get('diversity_weight', 0.01),
+                alignment_weight=hyperparam['training']['compile'].get('alignment_weight', 0.01),
+                use_regression_aware=hyperparam['training']['compile'].get('use_regression_aware', False),
+                target_similarity_threshold=hyperparam['training']['compile'].get('target_similarity_threshold', 0.1),
+                similarity_metric=hyperparam['training']['compile'].get('similarity_metric', 'euclidean')
+            )
     else:
         # Use appropriate metrics based on loss function
         if lossdef in ["BCEmask", "CCEmask", "binary_crossentropy", "categorical_crossentropy"]:

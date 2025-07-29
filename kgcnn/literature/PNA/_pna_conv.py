@@ -68,6 +68,9 @@ class PNALayer(GraphBaseLayer):
         self.lazy_add = LazyAdd()
         self.lazy_concat = LazyConcatenate()
         
+        # Initialize projection layer for skip connection (will be built when needed)
+        self.node_projection = None
+        
     def call(self, inputs, **kwargs):
         """Forward pass with PNA aggregation.
         
@@ -79,20 +82,38 @@ class PNALayer(GraphBaseLayer):
         """
         node_attributes, edge_indices = inputs
         
-        # Gather neighbor features
+        # Gather neighbor features using edge indices
         neighbor_features = self.gather_nodes([node_attributes, edge_indices])
         
         # Apply multiple aggregators
         aggregated_features = []
         for aggregator in self.aggregators:
             if aggregator == "mean":
-                agg_feat = self.aggregate_edges([neighbor_features, edge_indices])
+                # Create dummy edge features (zeros) since PNA doesn't use edge features
+                dummy_edge_features = tf.zeros_like(neighbor_features)
+                agg_feat = self.aggregate_edges([neighbor_features, dummy_edge_features, edge_indices])
             elif aggregator == "max":
-                agg_feat = tf.ragged.map_flat_values(tf.reduce_max, neighbor_features, axis=1)
+                # Use AggregateLocalEdges with max pooling to maintain shape consistency
+                dummy_edge_features = tf.zeros_like(neighbor_features)
+                agg_feat = AggregateLocalEdges(pooling_method="max")([neighbor_features, dummy_edge_features, edge_indices])
             elif aggregator == "min":
-                agg_feat = tf.ragged.map_flat_values(tf.reduce_min, neighbor_features, axis=1)
+                # Use AggregateLocalEdges with min pooling to maintain shape consistency
+                dummy_edge_features = tf.zeros_like(neighbor_features)
+                agg_feat = AggregateLocalEdges(pooling_method="min")([neighbor_features, dummy_edge_features, edge_indices])
             elif aggregator == "std":
-                agg_feat = tf.ragged.map_flat_values(tf.math.reduce_std, neighbor_features, axis=1)
+                # For std, we need to compute it manually since AggregateLocalEdges doesn't support std
+                # First compute mean, then compute std
+                dummy_edge_features = tf.zeros_like(neighbor_features)
+                mean_feat = AggregateLocalEdges(pooling_method="mean")([neighbor_features, dummy_edge_features, edge_indices])
+                # Compute squared differences and then mean
+                # Use map_flat_values to avoid nested ragged tensors
+                squared_diff = tf.ragged.map_flat_values(
+                    lambda x: tf.square(x - mean_feat.flat_values), 
+                    neighbor_features
+                )
+                dummy_edge_features_sq = tf.zeros_like(squared_diff)
+                variance = AggregateLocalEdges(pooling_method="mean")([squared_diff, dummy_edge_features_sq, edge_indices])
+                agg_feat = tf.sqrt(variance + 1e-8)  # Add small epsilon to avoid sqrt(0)
             else:
                 raise ValueError(f"Unsupported aggregator: {aggregator}")
             
@@ -106,8 +127,10 @@ class PNALayer(GraphBaseLayer):
         
         # Apply degree scaling
         # Calculate node degrees
+        num_nodes = tf.cast(tf.shape(node_attributes.flat_values)[0], tf.int32)
         node_degrees = tf.ragged.map_flat_values(
-            tf.math.bincount, edge_indices[:, :, 0], minlength=tf.shape(node_attributes)[1]
+            lambda x, n=num_nodes: tf.math.bincount(tf.cast(x[:, 0], tf.int32), minlength=n),
+            edge_indices
         )
         
         # Apply scalers
@@ -138,7 +161,15 @@ class PNALayer(GraphBaseLayer):
         output = self.mlp(final_features)
         
         # Skip connection
-        output = self.lazy_add([node_attributes, output])
+        # Project node_attributes to match output shape if needed
+        if node_attributes.shape[-1] != output.shape[-1]:
+            # Create projection layer if not already created
+            if self.node_projection is None:
+                self.node_projection = Dense(output.shape[-1], use_bias=False)
+            node_proj_out = self.node_projection(node_attributes)
+            output = self.lazy_add([node_proj_out, output])
+        else:
+            output = self.lazy_add([node_attributes, output])
         
         # Apply dropout
         if self.dropout:

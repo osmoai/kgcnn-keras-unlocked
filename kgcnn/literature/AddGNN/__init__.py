@@ -5,7 +5,12 @@ Reference:
     Based on Graph Neural Networks with Additive Attention. Symmetry, 17(6), 873.
 """
 
-from ._make import make_model
+from ._make import make_model, model_default
+from ._make import make_contrastive_addgnn_model
 from ._addgnn_conv import AddGNNConv
 
-__all__ = ["make_model", "AddGNNConv"] 
+__all__ = [
+    "make_model",
+    "model_default",
+    "make_contrastive_addgnn_model"
+] 
