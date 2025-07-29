@@ -78,26 +78,44 @@ class rGINE(GraphBaseLayer):
         """
         node, edge_attributes, edge_index = inputs
        
-        # Add a random feature to the node (rGIN feature)
-        node_shape = tf.shape(node.flat_values)
-        random_values = tf.RaggedTensor.from_row_lengths(
-            tf.cast(tf.random.uniform([node_shape[0], 1], maxval=self.random_range, dtype=tf.int32), self.dtype) / self.random_range,
-            row_lengths=node.row_lengths()
-        )
-        node = self.lay_concat([node, random_values])
-
-        # Gather neighbor nodes and edge attributes
+        # Gather neighbor nodes first
         ed = self.lay_gather([node, edge_index], **kwargs)  # Neighbor node features
-        ed_attr = edge_attributes  # Edge attributes
+        
+        # Add random features to neighbor nodes (rGIN feature)
+        ed_shape = tf.shape(ed.flat_values)
+        random_values = tf.RaggedTensor.from_row_lengths(
+            tf.cast(tf.random.uniform([ed_shape[0], 1], maxval=self.random_range, dtype=tf.int32), self.dtype) / self.random_range,
+            row_lengths=ed.row_lengths()
+        )
+        ed = self.lay_concat([ed, random_values])
         
         # Add neighbor features and edge attributes (GINE extension)
-        ed_combined = self.lay_add([ed, ed_attr], **kwargs)
+        # Note: ed now has 101 dimensions, edge_attributes has 100 dimensions
+        # We need to pad edge_attributes to match ed dimensions
+        edge_shape = tf.shape(edge_attributes.flat_values)
+        edge_padding = tf.RaggedTensor.from_row_lengths(
+            tf.zeros([edge_shape[0], 1], dtype=self.dtype),
+            row_lengths=edge_attributes.row_lengths()
+        )
+        edge_attributes_padded = self.lay_concat([edge_attributes, edge_padding])
+        
+        # Add neighbor features and edge attributes (GINE extension)
+        ed_combined = self.lay_add([ed, edge_attributes_padded], **kwargs)
         
         # Aggregate combined features
         nu = self.lay_pool([node, ed_combined, edge_index], **kwargs)  # Summing for each node connection
-        no = (1+self.eps_k)*node
+        
+        # Add random features to original nodes to match aggregated neighbor features
+        node_shape = tf.shape(node.flat_values)
+        node_random_values = tf.RaggedTensor.from_row_lengths(
+            tf.cast(tf.random.uniform([node_shape[0], 1], maxval=self.random_range, dtype=tf.int32), self.dtype) / self.random_range,
+            row_lengths=node.row_lengths()
+        )
+        node_with_random = self.lay_concat([node, node_random_values])
+        
+        no = (1+self.eps_k)*node_with_random
                
-        # Add the random features to the original features
+        # Add the aggregated neighbor features to the original features
         out = self.lay_add([no, nu], **kwargs)
 
         return out

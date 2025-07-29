@@ -145,7 +145,9 @@ def make_model_edge(inputs: list = None,
     # Output MLP
     out = MLP(**output_mlp)(out)
 
-    if output_to_tensor:
+    # Only apply ChangeTensorType if the output is still ragged
+    # After PoolingNodes, the output is typically already a regular tensor
+    if output_to_tensor and hasattr(out, 'ragged_rank') and out.ragged_rank > 0:
         out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
 
     model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input] + ([graph_descriptors_input] if graph_descriptors_input is not None else []),
