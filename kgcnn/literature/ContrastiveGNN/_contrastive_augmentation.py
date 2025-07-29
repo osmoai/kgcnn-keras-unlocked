@@ -81,17 +81,49 @@ class MolCLRAugmentation(GraphAugmentationLayer):
     
     def _mask_nodes(self, node_attributes):
         """Mask node features with zeros."""
-        mask = tf.random.uniform(tf.shape(node_attributes)[:2]) > self.node_mask_rate
-        mask = tf.expand_dims(mask, -1)
-        return node_attributes * tf.cast(mask, node_attributes.dtype)
+        # Handle ragged tensors properly
+        if isinstance(node_attributes, tf.RaggedTensor):
+            # Get the row lengths for ragged tensor
+            row_lengths = node_attributes.row_lengths()
+            # Create mask for each row
+            mask = tf.map_fn(
+                lambda x: tf.random.uniform([x]) > self.node_mask_rate,
+                row_lengths,
+                fn_output_signature=tf.RaggedTensorSpec(shape=[None], dtype=tf.bool)
+            )
+            # Expand mask to match feature dimensions
+            mask = tf.expand_dims(mask, -1)
+            return node_attributes * tf.cast(mask, node_attributes.dtype)
+        else:
+            # Handle regular tensors
+            mask = tf.random.uniform(tf.shape(node_attributes)[:2]) > self.node_mask_rate
+            mask = tf.expand_dims(mask, -1)
+            return node_attributes * tf.cast(mask, node_attributes.dtype)
     
     def _drop_edges(self, edge_attributes, edge_indices):
         """Randomly drop edges."""
-        mask = tf.random.uniform(tf.shape(edge_attributes)[:2]) > self.edge_drop_rate
-        mask = tf.expand_dims(mask, -1)
-        
-        edge_attributes = edge_attributes * tf.cast(mask, edge_attributes.dtype)
-        edge_indices = edge_indices * tf.cast(mask, edge_indices.dtype)
+        # Handle ragged tensors properly
+        if isinstance(edge_attributes, tf.RaggedTensor):
+            # Get the row lengths for ragged tensor
+            row_lengths = edge_attributes.row_lengths()
+            # Create mask for each row
+            mask = tf.map_fn(
+                lambda x: tf.random.uniform([x]) > self.edge_drop_rate,
+                row_lengths,
+                fn_output_signature=tf.RaggedTensorSpec(shape=[None], dtype=tf.bool)
+            )
+            # Expand mask to match feature dimensions
+            mask = tf.expand_dims(mask, -1)
+            
+            edge_attributes = edge_attributes * tf.cast(mask, edge_attributes.dtype)
+            edge_indices = edge_indices * tf.cast(mask, edge_indices.dtype)
+        else:
+            # Handle regular tensors
+            mask = tf.random.uniform(tf.shape(edge_attributes)[:2]) > self.edge_drop_rate
+            mask = tf.expand_dims(mask, -1)
+            
+            edge_attributes = edge_attributes * tf.cast(mask, edge_attributes.dtype)
+            edge_indices = edge_indices * tf.cast(mask, edge_indices.dtype)
         
         return edge_attributes, edge_indices
     
@@ -100,13 +132,14 @@ class MolCLRAugmentation(GraphAugmentationLayer):
         # Simple implementation: keep top nodes by degree
         # In practice, you might want more sophisticated sampling
         num_nodes = tf.shape(node_attributes)[1]
-        keep_nodes = tf.cast(num_nodes * self.subgraph_ratio, tf.int32)
+        keep_nodes = tf.cast(tf.cast(num_nodes, tf.float32) * self.subgraph_ratio, tf.int32)
         
         # Keep first keep_nodes nodes
         node_attributes = node_attributes[:, :keep_nodes, :]
         
         # Filter edges that connect to kept nodes
-        mask = tf.reduce_all(edge_indices < keep_nodes, axis=-1)
+        keep_nodes_int64 = tf.cast(keep_nodes, tf.int64)
+        mask = tf.reduce_all(edge_indices < keep_nodes_int64, axis=-1)
         mask = tf.expand_dims(mask, -1)
         
         edge_attributes = edge_attributes * tf.cast(mask, edge_attributes.dtype)
@@ -174,10 +207,11 @@ class GraphCLAugmentation(GraphAugmentationLayer):
     def _sample_subgraph(self, inputs):
         node_attributes, edge_attributes, edge_indices = inputs
         num_nodes = tf.shape(node_attributes)[1]
-        keep_nodes = tf.cast(num_nodes * self.subgraph_ratio, tf.int32)
+        keep_nodes = tf.cast(tf.cast(num_nodes, tf.float32) * self.subgraph_ratio, tf.int32)
         node_attributes = node_attributes[:, :keep_nodes, :]
         
-        mask = tf.reduce_all(edge_indices < keep_nodes, axis=-1)
+        keep_nodes_int64 = tf.cast(keep_nodes, tf.int64)
+        mask = tf.reduce_all(edge_indices < keep_nodes_int64, axis=-1)
         mask = tf.expand_dims(mask, -1)
         edge_attributes = edge_attributes * tf.cast(mask, edge_attributes.dtype)
         edge_indices = edge_indices * tf.cast(mask, edge_indices.dtype)
