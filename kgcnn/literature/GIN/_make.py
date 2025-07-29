@@ -32,7 +32,7 @@ model_default = {
                  "activation": ["relu", "relu", "linear"]},
     "output_embedding": 'graph', "output_to_tensor": True,
     "output_mlp": {"use_bias": True, "units": 1,
-                   "activation": "softmax"}
+                   "activation": "linear"}
 }
 
 
@@ -145,7 +145,7 @@ model_default_edge = {
                  "activation": ["relu", "relu", "linear"]},
     "output_embedding": 'graph', "output_to_tensor": True,
     "output_mlp": {"use_bias": True, "units": 1,
-                   "activation": "softmax"}
+                   "activation": "linear"}
 }
 
 

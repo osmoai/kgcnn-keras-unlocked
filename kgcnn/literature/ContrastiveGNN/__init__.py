@@ -8,6 +8,7 @@ from ._make import (
     make_contrastive_gnn_model,
     make_contrastive_gin_model,
     make_contrastive_gat_model,
+    make_contrastive_gatv2_model,
     make_contrastive_dmpnn_model,
     compile_contrastive_gnn_model,
     contrastive_gnn_models
@@ -34,6 +35,7 @@ __all__ = [
     "make_contrastive_gnn_model",
     "make_contrastive_gin_model", 
     "make_contrastive_gat_model",
+    "make_contrastive_gatv2_model",
     "make_contrastive_dmpnn_model",
     "compile_contrastive_gnn_model",
     "contrastive_gnn_models",

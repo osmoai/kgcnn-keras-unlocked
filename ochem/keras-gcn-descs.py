@@ -2797,6 +2797,102 @@ elif architecture_name == 'ContrastiveGAT':
 
 
 
+# ContrastiveGATv2 implementation
+elif architecture_name == 'ContrastiveGATv2':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found ContrastiveGATv2 architecture!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "ContrastiveGATv2",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "attention_args": {
+            "units": 128,
+            "use_bias": True,
+            "activation": "relu",
+            "use_edge_features": True
+        },
+        "pooling_nodes_args": {
+            "pooling_method": "sum"
+        },
+        "depth": 3,
+        "attention_heads_num": 8,
+        "attention_heads_concat": True,
+        "verbose": 10,
+        "use_graph_state": True,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]},
+        "contrastive_args": {
+            "use_contrastive_loss": True,
+            "contrastive_loss_type": "infonce",
+            "temperature": 0.1,
+            "contrastive_weight": 0.1
+        }
+    }
+    
+    # Update output dimensions and activation based on config file
+    print(f"Before update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"Before update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    model_config = update_output_dimensions(model_config, architecture_name)
+    print(f"After update_output_dimensions: output_mlp units = {model_config['output_mlp']['units']}")
+    print(f"After update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
+    
+    hyper = {
+        "model": {
+            "class_name": "make_contrastive_gatv2_model",
+            "module_name": "kgcnn.literature.ContrastiveGNN",  # Use ContrastiveGNN module
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function,
+                "contrastive_weight": 0.1,
+                "temperature": 0.1
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
+
+
 # ContrastiveDMPNN implementation
 elif architecture_name == 'ContrastiveDMPNN':
     print(f"Checking architecture: {architecture_name}")

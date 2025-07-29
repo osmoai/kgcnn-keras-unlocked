@@ -11,7 +11,7 @@ from kgcnn.layers.pooling import PoolingNodes
 from kgcnn.layers.mlp import MLP
 from kgcnn.layers.norm import GraphBatchNormalization
 from kgcnn.layers.geom import NodeDistanceEuclidean
-from kgcnn.layers.attention import AttentionHeadGAT
+from kgcnn.layers.attention import AttentionHeadGAT, AttentionHeadGATV2
 from kgcnn.layers.aggr import AggregateLocalEdges
 from kgcnn.layers.gather import GatherNodesOutgoing, GatherNodesIngoing
 from kgcnn.layers.update import GRUUpdate
@@ -262,6 +262,32 @@ def make_contrastive_gnn_model(
             # Combine view outputs
             n = tf.add_n(view_outputs) / len(view_outputs)
     
+    elif gnn_type.lower() == "gatv2":
+        # Contrastive GATv2 implementation
+        gnn_layers = []
+        for i in range(depth):
+            # Create multiple GATv2 views
+            gatv2_views = []
+            for view_idx in range(contrastive_args["num_views"]):
+                gatv2_layer = AttentionHeadGATV2(
+                    units=units,
+                    use_edge_features=True,
+                    use_final_activation=True,
+                    has_self_loops=True,
+                    activation="relu",
+                    use_bias=True
+                )
+                gatv2_views.append(gatv2_layer)
+            
+            # Apply GATv2 views and combine
+            view_outputs = []
+            for gatv2_layer in gatv2_views:
+                view_output = gatv2_layer([n, e, ed])
+                view_outputs.append(view_output)
+            
+            # Combine view outputs
+            n = tf.add_n(view_outputs) / len(view_outputs)
+    
     elif gnn_type.lower() == "dmpnn":
         # Contrastive DMPNN implementation
         gnn_layers = []
@@ -392,6 +418,16 @@ def make_contrastive_gat_model(inputs, input_embedding=None, **kwargs):
         inputs=inputs,
         input_embedding=input_embedding,
         gnn_type="gat",
+        **kwargs
+    )
+
+
+def make_contrastive_gatv2_model(inputs, input_embedding=None, **kwargs):
+    """Create a contrastive GATv2 model."""
+    return make_contrastive_gnn_model(
+        inputs=inputs,
+        input_embedding=input_embedding,
+        gnn_type="gatv2",
         **kwargs
     )
 
