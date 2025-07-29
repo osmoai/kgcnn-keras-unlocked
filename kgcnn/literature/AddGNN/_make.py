@@ -26,7 +26,7 @@ model_default = {
     "inputs": [{"shape": (None,), "name": "node_attributes", "dtype": "float32", "ragged": True},
                {"shape": (None,), "name": "edge_attributes", "dtype": "float32", "ragged": True},
                {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
-               {"shape": (None,), "name": "graph_desc", "dtype": "float32", "ragged": False}],
+               {"shape": (None,), "name": "graph_descriptors", "dtype": "float32", "ragged": False}],
     "input_embedding": {"node": {"input_dim": 95, "output_dim": 200},
                         "edge": {"input_dim": 5, "output_dim": 200},
                         "graph": {"input_dim": 100, "output_dim": 64}},
@@ -72,9 +72,9 @@ def make_model(inputs: list = None,
     to combine node and edge features for molecular property prediction.
 
     Inputs:
-        list: `[node_attributes, edge_attributes, edge_indices, graph_desc]`
-        or `[node_attributes, edge_distance, edge_indices, graph_desc]` if :obj:`geometric_edge=True`
-        or `[node_attributes, node_coordinates, edge_indices, graph_desc]` if :obj:`make_distance=True` and
+        list: `[node_attributes, edge_attributes, edge_indices, graph_descriptors]`
+        or `[node_attributes, edge_distance, edge_indices, graph_descriptors]` if :obj:`geometric_edge=True`
+        or `[node_attributes, node_coordinates, edge_indices, graph_descriptors]` if :obj:`make_distance=True` and
         :obj:`expand_distance=True` to compute edge distances from node coordinates within the model.
 
             - node_attributes (tf.RaggedTensor): Node attributes of shape `(batch, None, F)` or `(batch, None)`
@@ -86,7 +86,7 @@ def make_model(inputs: list = None,
               with model argument :obj:`expand_distance=True` and the numeric distance between nodes.
             - edge_indices (tf.RaggedTensor): Index list for edges of shape `(batch, None, 2)`.
             - node_coordinates (tf.RaggedTensor): Node (atomic) coordinates of shape `(batch, None, 3)`.
-            - graph_desc (tf.Tensor): Graph-level descriptors of shape `(batch, D)`.
+            - graph_descriptors (tf.Tensor): Graph-level descriptors of shape `(batch, D)`.
 
     Outputs:
         tf.Tensor: Graph embeddings of shape `(batch, L)` if :obj:`output_embedding="graph"`.
@@ -196,7 +196,7 @@ model_crystal_default = {
                {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
                {"shape": (None, 1), "name": "edge_image", "dtype": "int64", "ragged": True},
                {"shape": (3, 3), "name": "lattice", "dtype": "float32", "ragged": False},
-               {"shape": (None,), "name": "graph_desc", "dtype": "float32", "ragged": False}],
+               {"shape": (None,), "name": "graph_descriptors", "dtype": "float32", "ragged": False}],
     "input_embedding": {"node": {"input_dim": 95, "output_dim": 200},
                         "edge": {"input_dim": 5, "output_dim": 200},
                         "graph": {"input_dim": 100, "output_dim": 64}},

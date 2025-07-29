@@ -172,10 +172,16 @@ def splitingTrain_Val(dataset,labels,data_length, inputs=None, hypers=None, idx=
     if isClass:
         if isCCE:
             # only for two target classes minimum
-            hypers['model']["config"]['output_mlp']['activation'][-1] = 'softmax'
+            if isinstance(hypers['model']["config"]['output_mlp']['activation'], list):
+                hypers['model']["config"]['output_mlp']['activation'][-1] = 'softmax'
+            else:
+                hypers['model']["config"]['output_mlp']['activation'] = 'softmax'
         else:
             # generally it works
-            hypers['model']["config"]['output_mlp']['activation'][-1] = 'sigmoid'
+            if isinstance(hypers['model']["config"]['output_mlp']['activation'], list):
+                hypers['model']["config"]['output_mlp']['activation'][-1] = 'sigmoid'
+            else:
+                hypers['model']["config"]['output_mlp']['activation'] = 'sigmoid'
 
     hyper = HyperParameter(hypers,
                              model_name=hypers['model']['config']['name'],
