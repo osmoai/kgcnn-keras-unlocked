@@ -118,9 +118,10 @@ def make_model(inputs: list = None,
         # Pooling
         n = PoolingNodesCoAttentive(pooling_method="sum")(n)
         
-        # GRU update for molecule embedding
+        # After pooling, n is a regular tensor, not ragged
+        # Use Dense layers instead of GRUUpdate for molecule embedding
         for i in range(depthmol):
-            n = GRUUpdate(attention_args["units"])(n)
+            n = Dense(attention_args["units"], activation="relu")(n)
             if dropout > 0:
                 n = Dropout(dropout)(n)
     
@@ -144,7 +145,12 @@ def make_model(inputs: list = None,
 
     # Output casting
     if output_to_tensor:
-        out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
+        # Check if the output is already a regular tensor (after pooling)
+        # If it's already a tensor, we don't need to convert it
+        if hasattr(out, 'to_tensor'):
+            # It's a ragged tensor, convert to regular tensor
+            out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
+        # If it's already a regular tensor, do nothing
 
     model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input] + ([graph_descriptors_input] if graph_descriptors_input is not None else []),
                            outputs=out)

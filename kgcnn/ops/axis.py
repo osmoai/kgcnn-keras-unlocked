@@ -34,3 +34,9 @@ def get_positive_axis(axis, ndims, axis_name="axis", ndims_name="ndims"):
     elif axis < 0:
         raise ValueError("%s may only be negative if %s is statically known." % (axis_name, ndims_name))
     return axis
+
+
+# Alias for backward compatibility
+def get_axis(axis, ndims, axis_name="axis", ndims_name="ndims"):
+    """Alias for get_positive_axis for backward compatibility."""
+    return get_positive_axis(axis, ndims, axis_name, ndims_name)

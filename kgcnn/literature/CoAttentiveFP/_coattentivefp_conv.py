@@ -47,17 +47,18 @@ class CoAttentiveHeadFP(GraphBaseLayer):
         # Collaborative attention components
         if self.use_collaborative:
             self.node_attention = AttentionHeadGAT(
-                units=units // collaboration_heads,
+                units=units,
                 use_bias=use_bias,
                 activation=activation,
                 use_edge_features=True
             )
             self.edge_attention = AttentionHeadGAT(
-                units=units // collaboration_heads,
+                units=units,
                 use_bias=use_bias,
                 activation=activation,
                 use_edge_features=True
             )
+            self.node_projection = Dense(units, activation=activation, use_bias=use_bias)
             self.collaboration_gate = Dense(units, activation="sigmoid", use_bias=use_bias)
             self.collaboration_fusion = Dense(units, activation=activation, use_bias=use_bias)
         
@@ -90,7 +91,9 @@ class CoAttentiveHeadFP(GraphBaseLayer):
             node_attended = self.node_attention([node_attributes, edge_attributes, edge_indices])
             
             # 2. Edge attention (using node features as context)
-            edge_attended = self.edge_attention([edge_attributes, node_attributes, edge_indices])
+            # Project node_attributes to the same dimensions as the processed features
+            node_attributes_projected = self.node_projection(node_attributes)
+            edge_attended = self.edge_attention([edge_attributes, node_attributes_projected, edge_indices])
             
             # 3. Collaboration gate
             collaboration_weights = self.collaboration_gate(node_attributes)
@@ -98,7 +101,7 @@ class CoAttentiveHeadFP(GraphBaseLayer):
             # 4. Fuse node and edge attention with collaboration
             collaborative_features = (
                 collaboration_weights * node_attended + 
-                (1 - collaboration_weights) * self._propagate_edge_to_node(edge_attended, edge_indices)
+                (1 - collaboration_weights) * self._propagate_edge_to_node(edge_attended, edge_indices, node_attributes)
             )
             
             # 5. Final fusion
@@ -110,21 +113,33 @@ class CoAttentiveHeadFP(GraphBaseLayer):
         
         # Apply dropout and GRU update
         output = self.dropout(output)
-        output = self.gru_update([node_attributes, output])
+        
+        # For GRU update, we need to ensure both inputs have the same dimensions
+        # Since we're using collaborative attention, we should use the node_attended features
+        # which already have the correct dimensions
+        if self.use_collaborative:
+            # Use the node_attended features which have the correct dimensions
+            output = self.gru_update([node_attended, output])
+        else:
+            # For standard attention, use the original node_attributes (should be pre-embedded)
+            output = self.gru_update([node_attributes, output])
         
         return output
     
-    def _propagate_edge_to_node(self, edge_features, edge_indices):
+    def _propagate_edge_to_node(self, edge_features, edge_indices, node_features):
         """Propagate edge features to nodes using edge indices."""
-        # Get node indices from edge indices
-        node_indices = edge_indices[:, :, 0]  # Source nodes
+        # Use GatherNodesOutgoing to properly handle ragged tensors
+        from kgcnn.layers.gather import GatherNodesOutgoing
+        from kgcnn.layers.aggr import AggregateLocalEdges
         
-        # Use segment sum to aggregate edge features to nodes
-        node_features = tf.ragged.map_flat_values(
-            tf.math.segment_sum, edge_features.values, node_indices.values
-        )
+        # Gather edge features to nodes using edge indices
+        gathered_edges = GatherNodesOutgoing()([edge_features, edge_indices])
         
-        return node_features
+        # Aggregate edge features to nodes using the proper AggregateLocalEdges layer
+        # This requires [nodes, edges, tensor_index] as inputs
+        node_features_aggregated = AggregateLocalEdges(pooling_method="sum")([node_features, gathered_edges, edge_indices])
+        
+        return node_features_aggregated
 
 
 class PoolingNodesCoAttentive(PoolingNodes):

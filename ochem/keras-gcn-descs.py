@@ -880,12 +880,10 @@ elif architecture_name == 'CoAttentiveFP':
                 "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},  # Enhanced embedding
                                     "edge": {"input_dim": 5, "output_dim": 128},   # Enhanced embedding
                                     "graph": {"input_dim": 100, "output_dim": 64}},
-                "attention_args": {"units": 256, "use_collaborative": True},  # Collaborative attention
+                "attention_args": {"units": 256, "use_collaborative": True, "collaboration_heads": 8},  # Collaborative attention
                 "depthato": 3,  # Increased depth for better collaboration
                 "depthmol": 3,  # Increased depth for better collaboration
                 "dropout": 0.15,  # Reduced dropout for better collaboration
-                "collaborative_attention": True,  # Enable collaborative attention
-                "collaboration_heads": 8,  # Multiple attention heads for collaboration
                 "verbose": 10,
                 "output_embedding": "graph",
                 "output_mlp": {"use_bias": [True, True, True], "units": [256, 128, output_dim],
@@ -2832,7 +2830,7 @@ if TRAIN == "True":
         from kgcnn.literature.ContrastiveGNN import make_contrastive_gin_model
         make_model = make_contrastive_gin_model
     else:
-        make_model = get_model_class(hyperparams["model"]["config"]["name"], hyperparams["model"]["class_name"])
+        make_model = get_model_class(hyperparams["model"]["module_name"], hyperparams["model"]["class_name"])
 
     # check Dataset
     data_name = dataset.dataset_name
