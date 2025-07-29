@@ -34,7 +34,7 @@ class rGINE(GraphBaseLayer):
 
     def __init__(self,
                  pooling_method='sum',
-                 epsilon_learnable=False,
+                 epsilon_learnable=True,  # Make epsilon learnable by default
                  random_range=100,
                  **kwargs):
         """Initialize layer.
