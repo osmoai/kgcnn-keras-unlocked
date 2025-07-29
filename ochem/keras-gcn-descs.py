@@ -160,6 +160,14 @@ def splitingTrain_Val(dataset,labels,data_length, inputs=None, hypers=None, idx=
     ytrain = tf.reshape(ytrain, shape=(len(trainidx),labels.shape[1]))
     ytest = tf.reshape(ytest, shape=(len(testidx),labels.shape[1]))
     
+    # DEBUG: Print label statistics
+    print(f"DEBUG: ytrain shape: {ytrain.shape}")
+    print(f"DEBUG: ytrain unique values: {tf.unique(tf.reshape(ytrain, [-1]))}")
+    print(f"DEBUG: ytrain mean: {tf.reduce_mean(ytrain)}")
+    print(f"DEBUG: ytrain std: {tf.math.reduce_std(ytrain)}")
+    print(f"DEBUG: ytrain min: {tf.reduce_min(ytrain)}")
+    print(f"DEBUG: ytrain max: {tf.reduce_max(ytrain)}")
+    
     print(hypers)
 
     if embsize:

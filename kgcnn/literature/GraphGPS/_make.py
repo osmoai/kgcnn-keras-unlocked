@@ -142,6 +142,10 @@ def make_graphgps_model(
         graph_embedding = OptionalInputEmbedding(**input_graph_embedding)
         graph_descriptors_input = graph_embedding(graph_descriptors_input)
     
+    # Normalize graph descriptors
+    if use_graph_state and graph_descriptors_input is not None:
+        graph_descriptors_input = tf.keras.layers.LayerNormalization(axis=-1)(graph_descriptors_input)
+    
     # GraphGPS layers
     node_features = node_input
     edge_features = edge_input
@@ -175,20 +179,9 @@ def make_graphgps_model(
     
     # Output processing
     if output_embedding == "graph":
-        # Graph-level pooling
-        if use_set2set:
-            if set2set_args is None:
-                set2set_args = {"channels": node_dim, "T": 3, "pooling_method": "sum"}
-            # Ensure channels match the node feature dimension
-            feature_dim = node_features.shape[-1]
-            if feature_dim is None:
-                feature_dim = node_dim  # fallback
-            set2set_args["channels"] = feature_dim
-            pooling = PoolingSet2SetEncoder(**set2set_args)
-            out = pooling(node_features)
-        else:
-            pooling = PoolingNodes(pooling_method="sum")
-            out = pooling([node_features, edge_index_input])
+        # Graph-level pooling - use simple pooling like GCN
+        pooling = PoolingNodes(pooling_method="sum")
+        out = pooling(node_features)
     elif output_embedding == "node":
         out = node_features
     else:
