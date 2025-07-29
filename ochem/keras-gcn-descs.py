@@ -2628,6 +2628,77 @@ elif architecture_name == 'DHTNNPlus':
             print(f"Added descriptor input with dimension {desc_dim} to DHTNNPlus")
         hyper["model"]["config"]["use_graph_state"] = True
 
+# MoGAT (Multi-order Graph Attention Network) - Water solubility prediction and interpretation
+elif architecture_name == 'MoGAT':
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.MoGAT",
+            "config": {
+                "name": "MoGAT",
+                "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+                           {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                           {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}],
+                "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
+                                    "edge": {"input_dim": 5, "output_dim": 128}},
+                "attention_args": {"units": 128},
+                "pooling_gat_nodes_args": {"pooling_method": "mean"},
+                "depthato": 4,
+                "depthmol": 4,
+                "dropout": 0.2,
+                "verbose": 10,
+                "output_embedding": "graph",
+                "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                               "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+            }
+        },
+        "training": {
+            "fit": {
+                "batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2,
+                "callbacks": [
+                    {
+                        "class_name": "kgcnn>LinearLearningRateScheduler", "config": {
+                            "learning_rate_start": 0.001, "learning_rate_stop": 1e-05, "epo_min": 100, "epo": 200,
+                            "verbose": 0
+                        }
+                    }
+                ]
+            },
+            "compile": {
+                "optimizer": {"class_name": "Addons>AdamW", "config": {"lr": 0.001,
+                                                                       "weight_decay": 1e-05}
+                              }
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+            "execute_folds": 1
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "kgcnn_version": "2.0.3"
+        }
+    }
+    
+    # Add descriptor input if using descriptors
+    if use_descriptors and descs:
+        input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
+        if 'graph_descriptors' not in input_names:
+            hyper["model"]["config"]["inputs"].append(
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+            )
+            print(f"Added descriptor input with dimension {desc_dim} to MoGAT")
+        hyper["model"]["config"]["use_graph_state"] = True
+
 # ContrastiveGIN implementation
 elif architecture_name == 'ContrastiveGIN':
     print(f"Checking architecture: {architecture_name}")
@@ -3903,7 +3974,7 @@ if TRAIN == "True":
     
     # Check if architecture was found
     if 'hyper' not in locals() or hyper is None:
-        raise ValueError(f"Architecture '{architecture_name}' is not implemented. Available architectures: GCN, GAT, GATv2, CMPNN, CoAttentiveFP, AttentiveFPPlus, CMPNNPlus, DMPNNAttention, DGIN, AddGNN, GraphTransformer, RGCN, rGIN, rGINE, GIN, GINE, GraphGPS, PNA, ExpC, EGAT, TransformerGAT, GRPE, KAGAT, DHTNN, DHTNNPlus, ContrastiveGIN")
+        raise ValueError(f"Architecture '{architecture_name}' is not implemented. Available architectures: GCN, GAT, GATv2, CMPNN, CoAttentiveFP, AttentiveFPPlus, CMPNNPlus, DMPNNAttention, DGIN, AddGNN, GraphTransformer, RGCN, rGIN, rGINE, GIN, GINE, GraphGPS, PNA, ExpC, EGAT, TransformerGAT, GRPE, KAGAT, DHTNN, DHTNNPlus, MoGAT, ContrastiveGIN")
     
     print(f"Selected architecture: {architecture_name}")
     print(f"Model name: {hyper['model']['config']['name']}")

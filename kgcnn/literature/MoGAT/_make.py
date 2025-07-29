@@ -110,10 +110,11 @@ def make_model(inputs: list = None,
                                use_embedding=len(inputs[0]['shape']) < 2)(node_input)
     ed = OptionalInputEmbedding(**input_embedding['edge'],
                                 use_embedding=len(inputs[1]['shape']) < 2)(edge_attr_input)
-    # Embed graph_descriptors if provided
+    # Process graph_descriptors if provided (use Dense layer for continuous values)
     if graph_descriptors_input is not None and "graph" in input_embedding:
-        graph_descriptors = OptionalInputEmbedding(**input_embedding['graph'],
-                                           use_embedding=len(inputs[3]['shape']) < 2)(graph_descriptors_input)
+        graph_descriptors = Dense(input_embedding['graph']['output_dim'], 
+                                 activation='relu', 
+                                 use_bias=True)(graph_descriptors_input)
     else:
         graph_descriptors = None
 
