@@ -24,7 +24,7 @@ model_default = {
         {"shape": (None,), "name": "node_attributes", "dtype": "float32", "ragged": True},
         {"shape": (None,), "name": "edge_attributes", "dtype": "float32", "ragged": True},
         {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
-        {"shape": (None,), "name": "graph_desc", "dtype": "float32", "ragged": False}
+        {"shape": (None,), "name": "graph_descriptors", "dtype": "float32", "ragged": False}
     ],
     "input_embedding": {
         "node": {"input_dim": 95, "output_dim": 200},
