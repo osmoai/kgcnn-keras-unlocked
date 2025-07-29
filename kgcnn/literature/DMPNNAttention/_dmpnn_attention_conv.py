@@ -107,7 +107,7 @@ class DMPNNAttentionPoolingEdges(GraphBaseLayer):
             edge_features = self.edge_activation_layer(edge_features)
             
             # Aggregate edge features to nodes
-            node_features_updated = self.aggregate_edges([edge_features, edge_indices_reverse])
+            node_features_updated = self.aggregate_edges([node_attributes, edge_features, edge_indices_reverse])
             
             # Apply node MLP
             node_features_updated = self.node_dense_layer(node_features_updated)
@@ -144,11 +144,9 @@ class PoolingNodesDMPNNAttention(PoolingNodes):
     def call(self, inputs, **kwargs):
         """Forward pass with attention-based pooling."""
         if self.pooling_method == "attention":
-            # Apply attention to get node weights
-            attended_nodes = self.attention_layer([inputs, inputs, None])  # Self-attention
-            
-            # Compute attention weights
-            attention_weights = self.attention_weights(attended_nodes)
+            # For self-attention without edge indices, use global attention
+            # Compute attention weights directly from node features
+            attention_weights = self.attention_weights(inputs)
             
             # Weighted pooling
             weighted_nodes = inputs * attention_weights

@@ -159,8 +159,8 @@ def make_model(name: str = None,
     # Output MLP
     out = MLP(**output_mlp)(out)
 
-    # Output casting
-    if output_to_tensor:
+    # Output casting - only if output is ragged tensor
+    if output_to_tensor and hasattr(out, 'to_tensor'):
         out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
 
     model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input, edge_index_reverse_input] + ([graph_descriptors_input] if graph_descriptors_input is not None else []),

@@ -100,6 +100,51 @@ class SortEdgeIndices(GraphPreProcessorBase):
         return sort_edge_indices(edge_indices, *edge_attributes, return_nested=True)
 
 
+class ValidateEdgeIndices(GraphPreProcessorBase):
+    r"""Validate and fix edge indices to ensure they are within the valid range for each graph.
+    
+    This preprocessor checks that all edge indices reference valid node indices and removes
+    any edges that reference non-existent nodes.
+    
+    Args:
+        edge_indices (str): Name of indices in dictionary. Default is "edge_indices".
+        edge_attributes (str): Name of edge attributes to filter along with indices. Default is "^edge_(?!indices$).*".
+    """
+
+    def __init__(self, *, edge_indices: str = "edge_indices", edge_attributes: str = "^edge_(?!indices$).*",
+                 name="validate_edge_indices", **kwargs):
+        super().__init__(name=name, **kwargs)
+        self._to_obtain.update({"edge_indices": edge_indices, "edge_attributes": edge_attributes})
+        self._to_assign = edge_indices
+        self._silent = ["edge_attributes"]
+        self._config_kwargs.update({"edge_indices": edge_indices, "edge_attributes": edge_attributes})
+
+    def call(self, *, edge_indices: np.ndarray, edge_attributes: list):
+        if edge_indices is None:
+            return None
+        
+        # Get the number of nodes (assuming node_attributes length)
+        num_nodes = len(self._graph_dict.get("node_attributes", []))
+        
+        if num_nodes == 0:
+            return edge_indices
+        
+        # Find valid edges (both source and target nodes exist)
+        valid_mask = (edge_indices[:, 0] >= 0) & (edge_indices[:, 0] < num_nodes) & \
+                    (edge_indices[:, 1] >= 0) & (edge_indices[:, 1] < num_nodes)
+        
+        # Filter edge indices
+        valid_edge_indices = edge_indices[valid_mask]
+        
+        # Filter edge attributes if they exist
+        if edge_attributes:
+            for attr_name, attr_values in edge_attributes.items():
+                if attr_values is not None and len(attr_values) == len(edge_indices):
+                    edge_attributes[attr_name] = attr_values[valid_mask]
+        
+        return valid_edge_indices
+
+
 class SetEdgeIndicesReverse(GraphPreProcessorBase):
     r"""Computes the index map of the reverse edge for each of the edges, if available. This can be used by a model
     to directly select the corresponding edge of :math:`(j, i)` which is :math:`(i, j)`.

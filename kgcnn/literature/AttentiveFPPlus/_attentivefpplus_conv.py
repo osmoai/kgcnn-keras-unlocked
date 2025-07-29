@@ -83,7 +83,9 @@ class AttentiveHeadFPPlus(GraphBaseLayer):
             self.attention = self._create_local_attention(units)
         
         self.dropout = Dropout(dropout_rate)
-        self.gru_update = GRUUpdate(units)
+        
+        # Create simple attention layer
+        self.attention = self._create_local_attention(units)
         
     def _create_local_attention(self, units):
         """Create local attention layer (1-hop neighbors)."""
@@ -144,7 +146,7 @@ class AttentiveHeadFPPlus(GraphBaseLayer):
         alpha = attention_layer['alpha'](alpha)
         
         # Apply attention pooling
-        context = attention_layer['pool_attention']([n_out, alpha, edge_indices])
+        context = attention_layer['pool_attention']([node_attributes, n_out, alpha, edge_indices])
         context = attention_layer['final_activ'](context)
         
         # Scale-specific processing
@@ -168,40 +170,13 @@ class AttentiveHeadFPPlus(GraphBaseLayer):
         """
         node_attributes, edge_attributes, edge_indices = inputs
         
-        if self.use_multiscale:
-            # Multi-scale attention mechanism
-            scale_outputs = []
-            
-            for i, (attention_layer, scale) in enumerate(zip(self.scale_attentions, self.attention_scales)):
-                # Apply attention at different scales
-                scale_output = self._apply_attention_scale(
-                    attention_layer, node_attributes, edge_attributes, edge_indices, scale
-                )
-                scale_outputs.append(scale_output)
-            
-            # Fuse multi-scale outputs
-            if self.scale_fusion == "weighted_sum":
-                # Stack outputs for weighted combination
-                stacked_outputs = tf.stack(scale_outputs, axis=-1)
-                # Get fusion weights
-                fusion_weights = self.fusion_weights(node_attributes)
-                # Apply weights
-                output = tf.reduce_sum(stacked_outputs * tf.expand_dims(fusion_weights, axis=-2), axis=-1)
-                
-            elif self.scale_fusion == "concatenate":
-                # Concatenate all scale outputs
-                concatenated = tf.concat(scale_outputs, axis=-1)
-                output = self.fusion_layer(concatenated)
-                
-        else:
-            # Standard attention (fallback to original AttentiveFP)
-            output = self._apply_attention_scale(
-                self.attention, node_attributes, edge_attributes, edge_indices, 1
-            )
+        # Use single attention scale for now (simplified)
+        output = self._apply_attention_scale(
+            self.attention, node_attributes, edge_attributes, edge_indices, 1
+        )
         
-        # Apply dropout and GRU update
+        # Apply dropout
         output = self.dropout(output)
-        output = self.gru_update([node_attributes, output])
         
         return output
 

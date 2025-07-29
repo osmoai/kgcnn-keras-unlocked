@@ -169,7 +169,7 @@ class PNALayer(GraphBaseLayer):
             node_proj_out = self.node_projection(node_attributes)
             output = self.lazy_add([node_proj_out, output])
         else:
-            output = self.lazy_add([node_attributes, output])
+        output = self.lazy_add([node_attributes, output])
         
         # Apply dropout
         if self.dropout:

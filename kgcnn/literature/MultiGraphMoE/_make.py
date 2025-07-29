@@ -150,7 +150,7 @@ def make_model(inputs: list = None,
                     ([graph_descriptors_input] if graph_descriptors_input is not None else []),
                     outputs=out, name=name)
     
-    return model
+    return model 
 
 
 def make_configurable_moe_model(inputs: list = None,

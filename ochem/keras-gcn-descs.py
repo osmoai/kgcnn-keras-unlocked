@@ -953,13 +953,10 @@ elif architecture_name == 'AttentiveFPPlus':
                 "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
                                     "edge": {"input_dim": 5, "output_dim": 128},
                                     "graph": {"input_dim": 100, "output_dim": 64}},
-                "attention_args": {"units": 256, "use_multiscale": True},  # Multi-scale attention
+                "attention_args": {"units": 256, "use_multiscale": True, "scale_fusion": "weighted_sum", "attention_scales": [1, 2, 4]},  # Multi-scale attention
                 "depthato": 4,  # Increased depth for multi-scale
                 "depthmol": 4,  # Increased depth for multi-scale
                 "dropout": 0.2,
-                "multiscale_attention": True,  # Enable multi-scale attention
-                "scale_fusion": "weighted_sum",  # How to fuse different scales
-                "attention_scales": [1, 2, 4],  # Different attention scales
                 "verbose": 10,
                 "output_embedding": "graph",
                 "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
@@ -1110,7 +1107,7 @@ elif architecture_name == 'DMPNNAttention':
                 "edge_initialize": {"units": 200, "use_bias": True, "activation": "relu"},
                 "edge_dense": {"units": 200, "use_bias": True, "activation": "relu"},
                 "edge_activation": {"activation": "relu"},
-                "node_dense": {"units": 200, "use_bias": True, "activation": "relu"},
+                "node_dense": {"units": 41, "use_bias": True, "activation": "relu"},
                 "verbose": 10, "depth": 5, "dropout": {"rate": 0.1},
                 "attention_units": 128, "attention_heads": 8,
                 "output_embedding": "graph",
@@ -1144,7 +1141,9 @@ elif architecture_name == 'DMPNNAttention':
                 "class_name": "MoleculeNetDataset",
                 "config": {},
                 "methods": [
-                    {"set_attributes": {}}
+                    {"set_attributes": {}},
+                    {"map_list": {"method": "validate_edge_indices"}},
+                    {"map_list": {"method": "set_edge_indices_reverse"}}
                 ]
             },
             "data_unit": "mol/L"
@@ -1178,19 +1177,19 @@ elif architecture_name in ['NMPN','MPNN']:
                            {'shape': (None, 2), 'name': "edge_indices", 'dtype': 'int64', 'ragged': True}],
                 'input_embedding': {"node": {"input_dim": 95, "output_dim": 128},
                                     "edge": {"input_dim": 95, "output_dim": 128},
-                                    'gauss_args': {"bins": 20, "distance": 4, "offset": 0.0, "sigma": 0.4},
-                                    'set2set_args': {'channels': 64, 'T': 3, "pooling_method": "sum", "init_qstar": "0"},
-                                    'pooling_args': {'pooling_method': "segment_sum"},
-                                    'edge_mlp': {'use_bias': True, 'activation': 'swish', "units": [64, 64]},
-                                    'use_set2set': True, 'depth': 3, 'node_dim': 128,
-                                    "geometric_edge": False, "make_distance": False, "expand_distance": False,
-                                    'verbose': 10,
-                                    'output_embedding': 'graph',
-                                    'output_mlp': {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                'gauss_args': {"bins": 20, "distance": 4, "offset": 0.0, "sigma": 0.4},
+                'set2set_args': {'channels': 64, 'T': 3, "pooling_method": "sum", "init_qstar": "0"},
+                'pooling_args': {'pooling_method': "segment_sum"},
+                'edge_mlp': {'use_bias': True, 'activation': 'swish', "units": [64, 64]},
+                'use_set2set': True, 'depth': 3, 'node_dim': 128,
+                "geometric_edge": False, "make_distance": False, "expand_distance": False,
+                'verbose': 10,
+                'output_embedding': 'graph',
+                'output_mlp': {"use_bias": [True, True, False], "units": [200, 100, output_dim],
                                                    "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
             }
-        }
-    },
+            }
+        },
         "training": {
             "fit": {
                 "batch_size": 32,
@@ -2376,8 +2375,7 @@ elif architecture_name == 'KAGAT':
                 "kagat_args": {"units": 128, "attention_heads": 8, "attention_units": 64,
                                "use_edge_features": True, "use_final_activation": True,
                                "has_self_loops": True, "dropout_rate": 0.1,
-                               "fourier_dim": 32, "fourier_freq_min": 1.0, "fourier_freq_max": 100.0,
-                               "activation": "relu", "use_bias": True},
+                               "hidden_dim": 64, "activation": "relu", "use_bias": True},
                 "depth": 4,
                 "verbose": 10,
                 "pooling_nodes_args": {"pooling_method": "sum"},
@@ -2605,7 +2603,7 @@ elif architecture_name == 'ContrastiveGIN':
             "graph": {"input_dim": 100, "output_dim": 64}
         },
         "gin_args": {
-            "units": 128,
+        "units": 128,
             "use_bias": True,
             "activation": "relu",
             "use_normalization": True,
@@ -2634,47 +2632,47 @@ elif architecture_name == 'ContrastiveGIN':
     print(f"After update_output_dimensions: output_mlp activation = {model_config['output_mlp']['activation']}")
     
     hyper = {
-            "model": {
-                "class_name": "make_contrastive_gin_model",
+        "model": {
+            "class_name": "make_contrastive_gin_model",
                 "module_name": "kgcnn.literature.GIN",  # Use regular GIN as base
-                "config": model_config
-            },
-            "training": {
-                "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
-                        },
-                "compile": {
-                    "optimizer": {"class_name": "Adam",
-                                  "config": {"lr": {
-                                      "class_name": "ExponentialDecay",
-                                      "config": {"initial_learning_rate": 0.001,
-                                                 "decay_steps": 1600,
-                                                 "decay_rate": 0.5, "staircase": False}
-                                  }
-                                  }
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
                     },
-                    "loss": loss_function,
-                    "contrastive_weight": 0.1,
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function,
+                "contrastive_weight": 0.1,
                     "temperature": 0.1
-                },
-                "cross_validation": {"class_name": "KFold",
-                                     "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
             },
-            "data": {
-                "dataset": {
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
                     "class_name": "MoleculeNetDataset",
-                    "config": {},
-                    "methods": [
+                "config": {},
+                "methods": [
                         {"set_attributes": {}}
-                    ]
-                },
-                "data_unit": "mol/L"
+                ]
             },
-            "info": {
-                "postfix": "",
-                "postfix_file": "",
-                "kgcnn_version": "3.0.0"
-            }
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
         }
+    }
 
 # ContrastiveGAT implementation
 elif architecture_name == 'ContrastiveGAT':
@@ -3716,12 +3714,12 @@ if TRAIN == "True":
                                if input_config["name"] == "graph_descriptors"]
             if len(graph_desc_inputs) > 1:
                 print("Cleaning up: Removing duplicate graph_descriptors inputs for DMPNN")
-                hyper["model"]["config"]["inputs"] = [
-                    input_config for input_config in hyper["model"]["config"]["inputs"] 
-                    if input_config["name"] != "graph_descriptors"
-                ]
-                # Add back one graph_descriptors input
-                hyper["model"]["config"]["inputs"].append(graph_desc_inputs[0])
+            hyper["model"]["config"]["inputs"] = [
+                input_config for input_config in hyper["model"]["config"]["inputs"] 
+                if input_config["name"] != "graph_descriptors"
+            ]
+            # Add back one graph_descriptors input
+            hyper["model"]["config"]["inputs"].append(graph_desc_inputs[0])
     
     # Check if architecture was found
     if 'hyper' not in locals() or hyper is None:
@@ -3829,7 +3827,7 @@ if TRAIN == "True":
         else:
             # For other contrastive models, use the complex ContrastiveGNN module
             model = make_model(**hyperparam['model']["config"])
-        print("Contrastive model created successfully!")
+            print("Contrastive model created successfully!")
     else:
         # For models that support descriptors, we need to keep use_graph_state
         if hyperparam["model"]["config"]["name"] in ['DMPNN', 'ChemProp', 'DGIN']:

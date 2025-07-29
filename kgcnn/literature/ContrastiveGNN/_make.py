@@ -134,7 +134,7 @@ def make_contrastive_gnn_model(
     if use_graph_state:
         if len(inputs) > 3:
             # We have separate graph_descriptors input
-            graph_embedding = OptionalInputEmbedding(**input_embedding["graph"])(inputs[3]) if input_embedding and "graph" in input_embedding else inputs[3]
+        graph_embedding = OptionalInputEmbedding(**input_embedding["graph"])(inputs[3]) if input_embedding and "graph" in input_embedding else inputs[3]
         elif len(inputs) == 3 and "graph" in input_embedding:
             # Graph descriptors might be in the embedding
             graph_embedding = OptionalInputEmbedding(**input_embedding["graph"])(inputs[2]) if input_embedding and "graph" in input_embedding else None

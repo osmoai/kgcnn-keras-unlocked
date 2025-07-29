@@ -149,7 +149,7 @@ def make_model(inputs: list = None,
         # If it's already a tensor, we don't need to convert it
         if hasattr(out, 'to_tensor'):
             # It's a ragged tensor, convert to regular tensor
-            out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
+        out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
         # If it's already a regular tensor, do nothing
 
     model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input] + ([graph_descriptors_input] if graph_descriptors_input is not None else []),

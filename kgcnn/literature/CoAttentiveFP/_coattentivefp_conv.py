@@ -122,7 +122,7 @@ class CoAttentiveHeadFP(GraphBaseLayer):
             output = self.gru_update([node_attended, output])
         else:
             # For standard attention, use the original node_attributes (should be pre-embedded)
-            output = self.gru_update([node_attributes, output])
+        output = self.gru_update([node_attributes, output])
         
         return output
     

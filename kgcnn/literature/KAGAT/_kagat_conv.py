@@ -1,7 +1,7 @@
-"""KA-GAT Convolution Layer with Fourier-KAN.
+"""KA-GAT Convolution Layer with KAN.
 
-This module implements the KA-GAT convolution layer that uses Fourier-KAN
-(Fourier Kolmogorov-Arnold Networks) instead of traditional MLPs for
+This module implements the KA-GAT convolution layer that uses KAN
+(Kolmogorov-Arnold Networks) instead of traditional MLPs for
 attention computation and feature transformation.
 """
 
@@ -12,47 +12,33 @@ from kgcnn.layers.attention import AttentionHeadGAT
 from kgcnn.layers.aggr import AggregateLocalEdges
 from kgcnn.layers.gather import GatherNodesOutgoing
 from kgcnn.layers.pooling import PoolingNodes
-from kgcnn.layers.geom import PositionEncodingBasisLayer
 import math
 
 ks = tf.keras
 
 
-class FourierKANLayer(ks.layers.Layer):
-    """Fourier-KAN Layer: Enhanced Kolmogorov-Arnold Network with Fourier basis.
+class KANLayer(ks.layers.Layer):
+    """KAN Layer: Kolmogorov-Arnold Network implementation.
     
-    This layer implements a Fourier-enhanced Kolmogorov-Arnold Network that uses
-    Fourier basis functions for better approximation of complex functions.
+    This layer implements a Kolmogorov-Arnold Network that follows the universal
+    approximation theorem by decomposing multivariate functions into univariate functions.
     
     Args:
         units (int): Output dimension
-        fourier_dim (int): Dimension of Fourier basis expansion
+        hidden_dim (int): Hidden dimension for inner functions
         activation (str): Activation function
         use_bias (bool): Whether to use bias
         dropout_rate (float): Dropout rate
-        fourier_freq_min (float): Minimum frequency for Fourier expansion
-        fourier_freq_max (float): Maximum frequency for Fourier expansion
     """
     
-    def __init__(self, units, fourier_dim=32, activation="relu", use_bias=True,
-                 dropout_rate=0.1, fourier_freq_min=1.0, fourier_freq_max=100.0, **kwargs):
-        super(FourierKANLayer, self).__init__(**kwargs)
+    def __init__(self, units, hidden_dim=64, activation="relu", use_bias=True,
+                 dropout_rate=0.1, **kwargs):
+        super(KANLayer, self).__init__(**kwargs)
         self.units = units
-        self.fourier_dim = fourier_dim
+        self.hidden_dim = hidden_dim
         self.activation = activation
         self.use_bias = use_bias
         self.dropout_rate = dropout_rate
-        self.fourier_freq_min = fourier_freq_min
-        self.fourier_freq_max = fourier_freq_max
-        
-        # Fourier basis layer
-        self.fourier_basis = PositionEncodingBasisLayer(
-            dim_half=fourier_dim//2,
-            wave_length_min=fourier_freq_min,
-            num_mult=fourier_freq_max/fourier_freq_min,
-            include_frequencies=True,
-            interleave_sin_cos=True
-        )
         
         # Kolmogorov-Arnold structure: outer function
         self.outer_transform = Dense(
@@ -62,10 +48,11 @@ class FourierKANLayer(ks.layers.Layer):
         )
         
         # Inner functions (Kolmogorov-Arnold decomposition)
+        # According to the theorem, we need 2n+1 inner functions for n-dimensional output
         self.inner_functions = []
-        for i in range(2*units + 1):  # Kolmogorov-Arnold theorem requirement
+        for i in range(2*units + 1):
             inner_func = Dense(
-                units=fourier_dim,
+                units=hidden_dim,
                 activation="relu",
                 use_bias=True
             )
@@ -78,7 +65,7 @@ class FourierKANLayer(ks.layers.Layer):
             self.dropout = None
     
     def call(self, inputs, training=None):
-        """Forward pass of Fourier-KAN layer.
+        """Forward pass of KAN layer.
         
         Args:
             inputs: Input tensor
@@ -87,13 +74,10 @@ class FourierKANLayer(ks.layers.Layer):
         Returns:
             Transformed tensor
         """
-        # Expand input to Fourier basis
-        fourier_expanded = self.fourier_basis(inputs)
-        
         # Apply inner functions (Kolmogorov-Arnold decomposition)
         inner_outputs = []
         for inner_func in self.inner_functions:
-            inner_out = inner_func(fourier_expanded)
+            inner_out = inner_func(inputs)
             inner_outputs.append(inner_out)
         
         # Sum inner function outputs (Kolmogorov-Arnold structure)
@@ -110,26 +94,24 @@ class FourierKANLayer(ks.layers.Layer):
     
     def get_config(self):
         """Get layer configuration."""
-        config = super(FourierKANLayer, self).get_config()
+        config = super(KANLayer, self).get_config()
         config.update({
             "units": self.units,
-            "fourier_dim": self.fourier_dim,
+            "hidden_dim": self.hidden_dim,
             "activation": self.activation,
             "use_bias": self.use_bias,
-            "dropout_rate": self.dropout_rate,
-            "fourier_freq_min": self.fourier_freq_min,
-            "fourier_freq_max": self.fourier_freq_max
+            "dropout_rate": self.dropout_rate
         })
         return config
 
 
 @ks.utils.register_keras_serializable(package='kgcnn', name='KAGATConv')
 class KAGATConv(GraphBaseLayer):
-    """KA-GAT Convolution Layer with Fourier-KAN attention.
+    """KA-GAT Convolution Layer with KAN attention.
     
-    This layer implements Graph Attention Network convolution using Fourier-KAN
-    for attention computation and feature transformation, providing enhanced
-    expressiveness and performance.
+    This layer implements Graph Attention Network convolution using KAN
+    (Kolmogorov-Arnold Networks) instead of traditional MLPs for enhanced
+    attention computation and feature transformation.
     
     Args:
         units (int): Output dimension
@@ -139,14 +121,12 @@ class KAGATConv(GraphBaseLayer):
         use_final_activation (bool): Whether to apply final activation
         has_self_loops (bool): Whether graph has self-loops
         dropout_rate (float): Dropout rate
-        fourier_dim (int): Dimension of Fourier basis expansion
-        fourier_freq_min (float): Minimum frequency for Fourier expansion
-        fourier_freq_max (float): Maximum frequency for Fourier expansion
+        hidden_dim (int): Hidden dimension for KAN layers
         activation (str): Activation function
         use_bias (bool): Whether to use bias
-        kernel_regularizer: Kernel regularization
-        bias_regularizer: Bias regularization
-        activity_regularizer: Activity regularization
+        kernel_regularizer: Kernel regularizer
+        bias_regularizer: Bias regularizer
+        activity_regularizer: Activity regularizer
         kernel_constraint: Kernel constraint
         bias_constraint: Bias constraint
         kernel_initializer: Kernel initializer
@@ -155,12 +135,10 @@ class KAGATConv(GraphBaseLayer):
     
     def __init__(self, units, attention_heads=8, attention_units=64, use_edge_features=True,
                  use_final_activation=True, has_self_loops=True, dropout_rate=0.1,
-                 fourier_dim=32, fourier_freq_min=1.0, fourier_freq_max=100.0,
-                 activation="relu", use_bias=True, kernel_regularizer=None, bias_regularizer=None,
-                 activity_regularizer=None, kernel_constraint=None, bias_constraint=None,
-                 kernel_initializer="glorot_uniform", bias_initializer="zeros", **kwargs):
+                 hidden_dim=64, activation="relu", use_bias=True, kernel_regularizer=None, 
+                 bias_regularizer=None, activity_regularizer=None, kernel_constraint=None, 
+                 bias_constraint=None, kernel_initializer="glorot_uniform", bias_initializer="zeros", **kwargs):
         super(KAGATConv, self).__init__(**kwargs)
-        
         self.units = units
         self.attention_heads = attention_heads
         self.attention_units = attention_units
@@ -168,32 +146,26 @@ class KAGATConv(GraphBaseLayer):
         self.use_final_activation = use_final_activation
         self.has_self_loops = has_self_loops
         self.dropout_rate = dropout_rate
-        self.fourier_dim = fourier_dim
-        self.fourier_freq_min = fourier_freq_min
-        self.fourier_freq_max = fourier_freq_max
+        self.hidden_dim = hidden_dim
         self.activation = activation
         self.use_bias = use_bias
         
-        # Fourier-KAN attention layer
-        self.fourier_attention = FourierKANLayer(
+        # KAN attention layer
+        self.kan_attention = KANLayer(
             units=attention_units,
-            fourier_dim=fourier_dim,
+            hidden_dim=hidden_dim,
             activation=activation,
             use_bias=use_bias,
-            dropout_rate=dropout_rate,
-            fourier_freq_min=fourier_freq_min,
-            fourier_freq_max=fourier_freq_max
+            dropout_rate=dropout_rate
         )
         
-        # Fourier-KAN feature transformation
-        self.fourier_transform = FourierKANLayer(
+        # KAN feature transformation
+        self.kan_transform = KANLayer(
             units=units,
-            fourier_dim=fourier_dim,
+            hidden_dim=hidden_dim,
             activation=activation,
             use_bias=use_bias,
-            dropout_rate=dropout_rate,
-            fourier_freq_min=fourier_freq_min,
-            fourier_freq_max=fourier_freq_max
+            dropout_rate=dropout_rate
         )
         
         # Multi-head attention
@@ -204,7 +176,6 @@ class KAGATConv(GraphBaseLayer):
                 use_edge_features=use_edge_features,
                 use_final_activation=False,
                 has_self_loops=has_self_loops,
-                dropout_rate=dropout_rate,
                 activation=activation,
                 use_bias=use_bias,
                 kernel_regularizer=kernel_regularizer,
@@ -234,10 +205,9 @@ class KAGATConv(GraphBaseLayer):
         """
         node_features, edge_features, edge_indices = inputs
         
-        # Apply Fourier-KAN attention for each head
+        # Apply attention for each head
         attention_outputs = []
         for attention_head in self.attention_heads:
-            # Use Fourier-KAN for attention computation
             attention_out = attention_head([node_features, edge_features, edge_indices])
             attention_outputs.append(attention_out)
         
@@ -247,8 +217,8 @@ class KAGATConv(GraphBaseLayer):
         else:
             multi_head_output = attention_outputs[0]
         
-        # Apply Fourier-KAN transformation
-        output = self.fourier_transform(multi_head_output)
+        # Apply KAN transformation to the concatenated output
+        output = self.kan_transform(multi_head_output)
         
         # Apply final activation if specified
         if self.final_activation is not None:
@@ -267,9 +237,7 @@ class KAGATConv(GraphBaseLayer):
             "use_final_activation": self.use_final_activation,
             "has_self_loops": self.has_self_loops,
             "dropout_rate": self.dropout_rate,
-            "fourier_dim": self.fourier_dim,
-            "fourier_freq_min": self.fourier_freq_min,
-            "fourier_freq_max": self.fourier_freq_max,
+            "hidden_dim": self.hidden_dim,
             "activation": self.activation,
             "use_bias": self.use_bias
         })

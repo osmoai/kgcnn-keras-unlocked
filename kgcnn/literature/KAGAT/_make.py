@@ -9,9 +9,9 @@ from kgcnn.layers.modules import Dense, Activation, Dropout
 from kgcnn.layers.pooling import PoolingNodes
 from kgcnn.layers.mlp import MLP
 from kgcnn.layers.attention import AttentionHeadGAT
-from kgcnn.layers_core.modules import OptionalInputEmbedding
+from kgcnn.layers.modules import OptionalInputEmbedding
 from kgcnn.model.utils import update_model_kwargs
-from ._kagat_conv import KAGATConv, FourierKANLayer
+from ._kagat_conv import KAGATConv, KANLayer
 
 ks = tf.keras
 
@@ -37,9 +37,7 @@ model_default = {
         "use_final_activation": True,
         "has_self_loops": True,
         "dropout_rate": 0.1,
-        "fourier_dim": 32,
-        "fourier_freq_min": 1.0,
-        "fourier_freq_max": 100.0,
+        "hidden_dim": 64,
         "activation": "relu",
         "use_bias": True
     },
@@ -125,8 +123,13 @@ def make_model(inputs: list = None,
     
     # Graph state fusion if provided
     if use_graph_state and graph_embedding is not None:
-        # Concatenate graph embedding with node features
-        n = ks.layers.Concatenate()([n, graph_embedding])
+        # Use LazyConcatenate which works with ragged tensors
+        from kgcnn.layers.modules import LazyConcatenate
+        # Expand graph embedding to match node features
+        from kgcnn.layers.geom import ExpandDims
+        graph_embedding_expanded = ExpandDims(axis=1)(graph_embedding)
+        # Concatenate along the feature dimension using LazyConcatenate
+        n = LazyConcatenate(axis=-1)([n, graph_embedding_expanded])
     
     # Output embedding choice
     if output_embedding == "graph":

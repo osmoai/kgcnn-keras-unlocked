@@ -362,7 +362,7 @@ def make_crystal_model(inputs: list = None,
             outputs=out, name=name)
 
     model.__kgcnn_model_version__ = __model_version__
-    return model
+    return model 
 
 
 def make_contrastive_addgnn_model(inputs: list = None,
