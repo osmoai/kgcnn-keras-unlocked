@@ -161,10 +161,27 @@ class GraphViewGenerator(ks.layers.Layer):
     
     def _feature_noise(self, node_features):
         """Add noise to node features."""
-        noise = tf.random.normal(tf.shape(node_features), mean=0.0, stddev=0.1)
-        noisy_features = node_features + noise
-        
-        return noisy_features
+        # Handle ragged tensors properly
+        if isinstance(node_features, tf.RaggedTensor):
+            # For ragged tensors, work with flat values
+            flat_node_features = node_features.flat_values
+            
+            # Add random noise to node features
+            noise = tf.random.normal(tf.shape(flat_node_features), mean=0.0, stddev=0.1)
+            noisy_flat_features = flat_node_features + noise
+            
+            # Reconstruct ragged tensor
+            noisy_features = tf.RaggedTensor.from_nested_row_splits(
+                noisy_flat_features, node_features.nested_row_splits
+            )
+            
+            return noisy_features
+        else:
+            # For regular tensors, use the original approach
+            noise = tf.random.normal(tf.shape(node_features), mean=0.0, stddev=0.1)
+            noisy_features = node_features + noise
+            
+            return noisy_features
     
     def get_config(self):
         config = super(GraphViewGenerator, self).get_config()

@@ -289,8 +289,8 @@ class ContrastiveGNNLoss(tf.keras.losses.Loss):
         
         # Select top-k hardest negatives if enabled
         if self.use_hard_negatives:
-            k = min(self.negative_samples, tf.shape(negative_similarities)[1])
-            negative_similarities = tf.nn.top_k(negative_similarities, k=k).values
+            k = tf.minimum(self.negative_samples, tf.shape(negative_similarities)[1])
+            negative_similarities = tf.nn.top_k(negative_similarities, k=tf.cast(k, tf.int32)).values
         
         # Compute InfoNCE loss
         logits = tf.concat([
