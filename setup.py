@@ -6,9 +6,9 @@ with open("README.md", "r", encoding="utf8") as fh:
 
 setup(
     name="kgcnn",
-    version="3.1.0",  # If version is updated, change version in `kgcnn.__init__` too. (and update changelog)
-    author="Patrick Reiser",
-    author_email="patrick.reiser@kit.edu",
+    version="3.2.0",  # If version is updated, change version in `kgcnn.__init__` too. (and update changelog)
+    author="Patrick Reiser, Guillaume Godin & LLMs",
+    author_email="patrick.reiser@kit.edu, guillaume@osmo.ai"
     description="General Base Layers for Graph Convolutions with tensorflow.keras",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -22,7 +22,7 @@ setup(
         "rdkit>=2022.9.2",
         "pymatgen>=2022.11.7",
         # "tensorflow>=2.9.0",  # Commented out to prevent overwriting Apple Silicon TensorFlow
-        "tensorflow-addons>=0.18.0",
+        "tensorflow-addons==0.23.0",
         "keras-tuner>=1.1.3",
         "requests>=2.28.1",
         "networkx>=2.8.8",
@@ -34,9 +34,6 @@ setup(
         "pyxtal>=0.5.5",
         "h5py>=3.9.0"
     ],
-    extras_require={
-        "openbabel": ["openbabel"],
-    },
     packages=find_packages(),
     include_package_data=True,
     package_data={"kgcnn": ["*.json", "*.yaml", "*.csv", "*.md"]},
