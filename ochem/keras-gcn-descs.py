@@ -505,9 +505,8 @@ def update_output_dimensions(config_dict, architecture_name=None):
             except Exception as e:
                 print(f"Failed to parse output_mlp from config: {e}")
     
-    # Fallback to original logic
-    # CRITICAL RULE: NEVER use 2 sigmoid activations with last_mlp + output_mlp combo!
-    # Priority: last_mlp over output_mlp
+    # NEW RULE: For binary classification, sigmoid MUST be in the FINAL output layer
+    # This applies to ALL models consistently
     if "last_mlp" in config_dict:
         print(f"Before update - last_mlp: {config_dict['last_mlp']}")
         if isinstance(config_dict["last_mlp"].get('units', []), list) and len(config_dict["last_mlp"]['units']) > 0:
@@ -517,13 +516,13 @@ def update_output_dimensions(config_dict, architecture_name=None):
             config_dict["last_mlp"]['units'] = output_dim
             print(f"Updated last_mlp units: {config_dict['last_mlp']['units']}")
         
-        # Update activation for last_mlp (main output layer)
+        # NEW RULE: last_mlp should have linear activation (not sigmoid)
         if isinstance(config_dict["last_mlp"].get('activation', []), list) and len(config_dict["last_mlp"]['activation']) > 0:
-            config_dict["last_mlp"]['activation'][-1] = activation
-            print(f"Updated last_mlp activation list: {config_dict['last_mlp']['activation']}")
+            config_dict["last_mlp"]['activation'][-1] = 'linear'
+            print(f"✅ Set last_mlp activation to linear (sigmoid goes in final output): {config_dict['last_mlp']['activation']}")
         elif isinstance(config_dict["last_mlp"].get('activation', 'linear'), str):
-            config_dict["last_mlp"]['activation'] = activation
-            print(f"Updated last_mlp activation: {config_dict['last_mlp']['activation']}")
+            config_dict["last_mlp"]['activation'] = 'linear'
+            print(f"✅ Set last_mlp activation to linear (sigmoid goes in final output): {config_dict['last_mlp']['activation']}")
         print(f"After update - last_mlp: {config_dict['last_mlp']}")
     
     if "output_mlp" in config_dict:
@@ -535,8 +534,8 @@ def update_output_dimensions(config_dict, architecture_name=None):
             config_dict["output_mlp"]['units'] = output_dim
             print(f"Updated output_mlp units: {config_dict['output_mlp']['units']}")
         
-        # CRITICAL: For output_mlp, ALWAYS use linear activation (it's just a wrapper)
-        # This prevents double sigmoid issues!
+        # NEW RULE: output_mlp should have sigmoid activation (final output layer)
+        # This is the FINAL layer that produces classification probabilities
         
         # SAFETY CHECK: Ensure activation is properly formatted
         if 'activation' not in config_dict["output_mlp"]:
@@ -552,21 +551,21 @@ def update_output_dimensions(config_dict, architecture_name=None):
             config_dict["output_mlp"]['activation'] = [config_dict["output_mlp"]['activation']] * len(units_list)
             print(f"⚠️  Converted activation to list in update_output_dimensions: {config_dict['output_mlp']['activation']}")
         
-        # Now set the last activation to linear
+        # NEW RULE: Set the final activation to sigmoid (for binary classification)
         if isinstance(config_dict["output_mlp"].get('activation', []), list) and len(config_dict["output_mlp"]['activation']) > 0:
-            config_dict["output_mlp"]['activation'][-1] = 'linear'
-            print(f"CRITICAL: Set output_mlp activation to linear (prevents double sigmoid): {config_dict['output_mlp']['activation']}")
+            config_dict["output_mlp"]['activation'][-1] = activation  # This should be 'sigmoid' for binary classification
+            print(f"✅ Set output_mlp final activation to {activation} (final output layer): {config_dict['output_mlp']['activation']}")
         elif isinstance(config_dict["output_mlp"].get('activation', 'linear'), str):
-            config_dict["output_mlp"]['activation'] = 'linear'
-            print(f"CRITICAL: Set output_mlp activation to linear (prevents double sigmoid): {config_dict['output_mlp']['activation']}")
+            config_dict["output_mlp"]['activation'] = activation  # This should be 'sigmoid' for binary classification
+            print(f"✅ Set output_mlp activation to {activation} (final output layer): {config_dict['output_mlp']['activation']}")
         print(f"After update - output_mlp: {config_dict['output_mlp']}")
     
-    # FINAL SAFETY CHECK: Ensure no double sigmoid
+    # FINAL SAFETY CHECK: Ensure proper sigmoid placement for classification
     if "last_mlp" in config_dict and "output_mlp" in config_dict:
         last_activation = config_dict["last_mlp"].get('activation', 'linear')
         output_activation = config_dict["output_mlp"].get('activation', 'linear')
         
-        # Check if both have sigmoid
+        # Check activation placement
         last_is_sigmoid = False
         output_is_sigmoid = False
         
@@ -581,12 +580,24 @@ def update_output_dimensions(config_dict, architecture_name=None):
             output_is_sigmoid = output_activation in ['sigmoid', 'softmax']
         
         if last_is_sigmoid and output_is_sigmoid:
-            print("🚨 CRITICAL ERROR: Double sigmoid detected! Fixing output_mlp to linear...")
-            if isinstance(config_dict["output_mlp"]['activation'], list):
-                config_dict["output_mlp"]['activation'][-1] = 'linear'
+            print("🚨 WARNING: Double sigmoid detected! This might cause issues.")
+            print("🚨 Consider using only one sigmoid at the final output layer.")
+        elif not last_is_sigmoid and output_is_sigmoid:
+            print("✅ Perfect: Sigmoid is correctly placed in final output layer")
+        elif last_is_sigmoid and not output_is_sigmoid:
+            print("⚠️  WARNING: Sigmoid is in last_mlp but not in output_mlp")
+            print("⚠️  This might cause issues with classification output.")
+            print("⚠️  Moving sigmoid to output_mlp (final layer)...")
+            # Fix: Move sigmoid to output_mlp
+            if isinstance(config_dict["last_mlp"]['activation'], list):
+                config_dict["last_mlp"]['activation'][-1] = 'linear'
             else:
-                config_dict["output_mlp"]['activation'] = 'linear'
-            print(f"✅ Fixed: output_mlp activation is now: {config_dict['output_mlp']['activation']}")
+                config_dict["last_mlp"]['activation'] = 'linear'
+            if isinstance(config_dict["output_mlp"]['activation'], list):
+                config_dict["output_mlp"]['activation'][-1] = activation
+            else:
+                config_dict["output_mlp"]['activation'] = activation
+            print("✅ Fixed: Moved sigmoid to final output layer")
     
     return config_dict
 
