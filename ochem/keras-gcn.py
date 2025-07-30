@@ -931,7 +931,7 @@ if architecture_name == 'DGIN':
     }
 
 # checked
-if architecture_name == 'ChemProp':
+if architecture_name in [ 'ChemProp', 'DMPNN']:
     hyper = {
         "model": {
             "class_name": "make_model",
@@ -1727,7 +1727,7 @@ if TRAIN == "True":
     if isClass:
         model.compile(opt, loss=BCEmask, metrics=['accuracy'])
     else:
-        model.compile(opt, loss=RMSEmask, metrics=[tf.keras.metrics.RootMeanSquaredError()])
+        model.compile(opt, loss=RMSEmask, metrics=[RMSEmask])
 
     print(model.summary())
 
