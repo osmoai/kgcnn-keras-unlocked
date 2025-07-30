@@ -8,7 +8,7 @@ setup(
     name="kgcnn",
     version="3.2.0",  # If version is updated, change version in `kgcnn.__init__` too. (and update changelog)
     author="Patrick Reiser, Guillaume Godin & LLMs",
-    author_email="patrick.reiser@kit.edu, guillaume@osmo.ai"
+    author_email="patrick.reiser@kit.edu, guillaume@osmo.ai",
     description="General Base Layers for Graph Convolutions with tensorflow.keras",
     long_description=long_description,
     long_description_content_type="text/markdown",
