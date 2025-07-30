@@ -169,19 +169,47 @@ def splitingTrain_Val(dataset,labels,data_length, inputs=None, hypers=None, idx=
     print(f"DEBUG: ytrain max: {tf.reduce_max(ytrain)}")
     
     print(hypers)
+    print(f"DEBUG: hypers type: {type(hypers)}")
+    print(f"DEBUG: hypers has get_dict: {hasattr(hypers, 'get_dict')}")
+    print(f"DEBUG: hypers has get: {hasattr(hypers, 'get')}")
+    print(f"DEBUG: hypers dir: {[attr for attr in dir(hypers) if not attr.startswith('_')]}")
 
     # Handle both HyperParameter objects and regular dictionaries
     if hasattr(hypers, 'get') and callable(hypers.get):
         # It's a regular dictionary-like object
         hypers_dict = hypers
+        print("DEBUG: Using hypers as dictionary")
     else:
         # It's a HyperParameter object, convert to dictionary
         try:
-            hypers_dict = hypers.get_dict() if hasattr(hypers, 'get_dict') else dict(hypers)
+            # Try different methods to convert HyperParameter to dictionary
+            if hasattr(hypers, 'get_dict'):
+                hypers_dict = hypers.get_dict()
+            elif hasattr(hypers, 'to_dict'):
+                hypers_dict = hypers.to_dict()
+            elif hasattr(hypers, '_hyper'):
+                hypers_dict = hypers._hyper
+            elif hasattr(hypers, '__dict__'):
+                hypers_dict = hypers.__dict__
+            else:
+                hypers_dict = dict(hypers)
             print("⚠️  Converted HyperParameter to dictionary for processing")
+            print(f"DEBUG: hypers_dict type: {type(hypers_dict)}")
+            print(f"DEBUG: hypers_dict keys: {list(hypers_dict.keys())}")
         except Exception as e:
             print(f"⚠️  Error converting HyperParameter: {e}, using as-is")
             hypers_dict = hypers
+    
+    print(f"DEBUG: Final hypers_dict type: {type(hypers_dict)}")
+    if hasattr(hypers_dict, 'get'):
+        print(f"DEBUG: hypers_dict['model']['config'].keys(): {list(hypers_dict['model']['config'].keys())}")
+    else:
+        print(f"DEBUG: hypers_dict is not a dictionary-like object")
+        # Try to access the HyperParameter object directly
+        try:
+            print(f"DEBUG: hypers['model']['config'].keys(): {list(hypers['model']['config'].keys())}")
+        except Exception as e:
+            print(f"DEBUG: Cannot access hypers['model']['config']: {e}")
 
     # CRITICAL: During inference, NEVER modify input dimensions
     if TRAIN == "False":
@@ -305,7 +333,7 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
         hyper_dict = hyper
     
     is3D = False
-    if modelname in ['PAiNN','DimeNetPP','HamNet','Schnet','HDNNP2nd','NMPN','Megnet']:
+    if modelname in ['PAiNN','DimeNetPP','HamNet','Schnet','HDNNP2nd','Megnet']:
         print('model need 3D molecules')
         if os.path.exists(name.replace('.csv','.sdf')) and not overwrite == 'True':
             print('use external 3D molecules')
@@ -1277,9 +1305,11 @@ elif architecture_name in ['NMPN','MPNN']:
                 'name': "NMPN",
                 'inputs': [{'shape': (None, 41), 'name': "node_attributes", 'dtype': 'float32', 'ragged': True},
                            {'shape': (None, ), 'name': "edge_number", 'dtype': 'float32', 'ragged': True},
-                           {'shape': (None, 2), 'name': "edge_indices", 'dtype': 'int64', 'ragged': True}],
+                           {'shape': (None, 2), 'name': "edge_indices", 'dtype': 'int64', 'ragged': True},
+                           {'shape': [desc_dim], 'name': "graph_descriptors", 'dtype': 'float32', 'ragged': False}],
                 'input_embedding': {"node": {"input_dim": 95, "output_dim": 128},
                                     "edge": {"input_dim": 95, "output_dim": 128},
+                                    "graph": {"input_dim": 100, "output_dim": 64}},
                 'gauss_args': {"bins": 20, "distance": 4, "offset": 0.0, "sigma": 0.4},
                 'set2set_args': {'channels': 64, 'T': 3, "pooling_method": "sum", "init_qstar": "0"},
                 'pooling_args': {'pooling_method': "segment_sum"},
@@ -1291,18 +1321,17 @@ elif architecture_name in ['NMPN','MPNN']:
                 'output_mlp': {"use_bias": [True, True, False], "units": [200, 100, output_dim],
                                                    "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
             }
-            }
         },
         "training": {
             "fit": {
                 "batch_size": 32,
-                "epochs": 800,
+                "epochs": 100,
                 "validation_freq": 10,
                 "verbose": 2,
                 "callbacks": [
                     {
                         "class_name": "kgcnn>LinearLearningRateScheduler", "config": {
-                        "learning_rate_start": 1e-03, "learning_rate_stop": 5e-05, "epo_min": 100, "epo": 800,
+                        "learning_rate_start": 1e-03, "learning_rate_stop": 5e-05, "epo_min": 100, "epo": 100,
                         "verbose": 0
                     }
                     }
@@ -1310,7 +1339,7 @@ elif architecture_name in ['NMPN','MPNN']:
             },
             "compile": {
                 "optimizer": {"class_name": "Adam", "config": {"lr": 1e-03}},
-                "loss": "mean_absolute_error"
+                "loss": "BCEmask"
             },
             "cross_validation": {"class_name": "KFold",
                                  "config": {"n_splits": 5, "random_state": 42, "shuffle": True}},
@@ -1321,8 +1350,7 @@ elif architecture_name in ['NMPN','MPNN']:
                 "module_name": "kgcnn.data.datasets.ESOLDataset",
                 "config": {},
                 "methods": [
-                    {"set_attributes": {}},
-                    {"map_list": {"method": "set_range", "max_distance": 3, "max_neighbours": 10000}}
+                    {"set_attributes": {}}
                 ]
             },
             "data_unit": "mol/L"
@@ -1535,6 +1563,9 @@ elif architecture_name == 'GraphTransformer':
         "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
                      "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
     }
+    
+    # Fix Set2Set channels to match transformer units
+    model_config["set2set_args"]["channels"] = model_config["transformer_args"]["units"]
     
     # Update output dimensions based on config file
     model_config = update_output_dimensions(model_config, architecture_name)
@@ -2592,19 +2623,19 @@ elif architecture_name == 'DHTNN':
         },
         "training": {
             "fit": {
-                "batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2,
+                "batch_size": 32, "epochs": 50, "validation_freq": 1, "verbose": 2,
                 "callbacks": [
                     {
                         "class_name": "kgcnn>LinearLearningRateScheduler", "config": {
-                            "learning_rate_start": 0.001, "learning_rate_stop": 1e-05, "epo_min": 100, "epo": 200,
+                            "learning_rate_start": 0.0001, "learning_rate_stop": 1e-06, "epo_min": 25, "epo": 50,
                             "verbose": 0
                         }
                     }
                 ]
             },
             "compile": {
-                "optimizer": {"class_name": "Addons>AdamW", "config": {"lr": 0.001,
-                                                                       "weight_decay": 1e-05}
+                "optimizer": {"class_name": "Adam", "config": {"lr": 0.0001,
+                                                              "clipnorm": 1.0}
                               }
             },
             "cross_validation": {"class_name": "KFold",
@@ -4618,7 +4649,7 @@ else:
             print("✅ No descriptors configuration matches saved model")
 
     # Model creation
-    make_model = get_model_class(hyper_dict["model"]["config"]["name"], hyper_dict["model"]["class_name"])
+    make_model = get_model_class(hyper_dict["model"]["module_name"], hyper_dict["model"]["class_name"])
 
     # CRITICAL: During inference, use the exact saved configuration
     # Do NOT modify any parameters, including use_graph_state

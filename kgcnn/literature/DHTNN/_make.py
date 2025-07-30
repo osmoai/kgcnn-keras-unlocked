@@ -44,7 +44,7 @@ model_default = {
     "depth": 4,
     "verbose": 10,
     "pooling_nodes_args": {"pooling_method": "sum"},
-    "use_graph_state": False,
+    "use_graph_state": True,
     "output_embedding": "graph",
     "output_to_tensor": True,
     "output_mlp": {
@@ -61,7 +61,7 @@ def make_model(inputs: list = None,
                depth: int = None,
                dhtnn_args: dict = None,
                pooling_nodes_args: dict = None,
-               use_graph_state: bool = None,
+               use_graph_state: bool = True,
                name: str = None,
                verbose: int = None,
                output_embedding: str = None,
@@ -121,19 +121,20 @@ def make_model(inputs: list = None,
         if i < depth - 1 and dhtnn_args.get("dropout_rate", 0) > 0:
             n = Dropout(dhtnn_args["dropout_rate"])(n)
     
-    # Graph state fusion if provided
-    if use_graph_state and graph_embedding is not None:
-        # Concatenate graph embedding with node features
-        n = ks.layers.Concatenate()([n, graph_embedding])
-    
     # Output embedding choice
     if output_embedding == "graph":
-        out = PoolingNodes(**pooling_nodes_args)(n)
+        pooled_n = PoolingNodes(**pooling_nodes_args)(n)
     elif output_embedding == "node":
-        out = n
+        pooled_n = n
     else:
         raise ValueError("Unsupported output embedding for mode %s" % output_embedding)
-    
+
+    # Graph state fusion if provided (after pooling)
+    if use_graph_state and graph_embedding is not None:
+        out = ks.layers.Concatenate()([pooled_n, graph_embedding])
+    else:
+        out = pooled_n
+
     # Output MLP
     out = MLP(**output_mlp)(out)
     
