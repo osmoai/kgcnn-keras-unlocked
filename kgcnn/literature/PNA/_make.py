@@ -125,7 +125,7 @@ def make_model(inputs: list = None,
     # Output casting
     if output_to_tensor:
         if hasattr(out, 'to_tensor'):
-        out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
+            out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
 
     model = ks.models.Model(inputs=[node_input, edge_index_input] + ([graph_descriptors_input] if graph_descriptors_input is not None else []),
                            outputs=out)

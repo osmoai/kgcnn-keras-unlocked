@@ -4285,7 +4285,7 @@ if TRAIN == "True":
         # For contrastive models, use the appropriate contrastive function
         print(f"Creating model with config: {hyperparam['model']['config']}")
         if architecture_name == 'ContrastiveGIN':
-            from kgcnn.literature.GIN import make_contrastive_gin_model
+            from kgcnn.literature.ContrastiveGNN import make_contrastive_gin_model
             model = make_contrastive_gin_model(**hyperparam['model']["config"])
         elif architecture_name == 'ContrastiveGAT':
             from kgcnn.literature.ContrastiveGNN import make_contrastive_gat_model
@@ -4294,22 +4294,22 @@ if TRAIN == "True":
             from kgcnn.literature.ContrastiveGNN import make_contrastive_gatv2_model
             model = make_contrastive_gatv2_model(**hyperparam['model']["config"])
         elif architecture_name == 'ContrastiveDMPNN':
-            from kgcnn.literature.DMPNN import make_contrastive_dmpnn_model
+            from kgcnn.literature.ContrastiveGNN import make_contrastive_dmpnn_model
             model = make_contrastive_dmpnn_model(**hyperparam['model']["config"])
         elif architecture_name == 'ContrastiveAttFP':
-            from kgcnn.literature.AttentiveFP import make_contrastive_attentivefp_model
-            model = make_contrastive_attentivefp_model(**hyperparam['model']["config"])
+            from kgcnn.literature.ContrastiveGNN import make_contrastive_attfp_model
+            model = make_contrastive_attfp_model(**hyperparam['model']["config"])
         elif architecture_name == 'ContrastiveAddGNN':
-            from kgcnn.literature.AddGNN import make_contrastive_addgnn_model
+            from kgcnn.literature.ContrastiveGNN import make_contrastive_addgnn_model
             model = make_contrastive_addgnn_model(**hyperparam['model']["config"])
         elif architecture_name == 'ContrastiveDGIN':
             from kgcnn.literature.ContrastiveGNN import make_contrastive_dgin_model
             model = make_contrastive_dgin_model(**hyperparam['model']["config"])
         elif architecture_name == 'ContrastivePNA':
-            from kgcnn.literature.PNA import make_contrastive_pna_model
+            from kgcnn.literature.ContrastiveGNN import make_contrastive_pna_model
             model = make_contrastive_pna_model(**hyperparam['model']["config"])
         elif architecture_name == 'ContrastiveMoE':
-            from kgcnn.literature.MultiGraphMoE import make_contrastive_moe_model
+            from kgcnn.literature.ContrastiveGNN import make_contrastive_moe_model
             model = make_contrastive_moe_model(**hyperparam['model']["config"])
         elif architecture_name == 'MoE':
             from kgcnn.literature.MultiGraphMoE import make_model

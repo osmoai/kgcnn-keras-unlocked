@@ -18,6 +18,10 @@ from kgcnn.layers.update import GRUUpdate
 from kgcnn.layers.geom import NodePosition, NodeDistanceEuclidean, GaussBasisLayer
 from kgcnn.layers.set2set import PoolingSet2SetEncoder
 from kgcnn.layers.modules import DenseEmbedding, LazyConcatenate
+from kgcnn.layers.base import GraphBaseLayer
+from kgcnn.layers.gather import GatherNodesOutgoing
+from kgcnn.layers.aggr import AggregateLocalEdges
+from kgcnn.layers.modules import LazyAdd, Activation, Dense
 
 from ._contrastive_gin_conv import ContrastiveGINConv
 from ._contrastive_attfp_conv import ContrastiveAttFPConv
@@ -55,26 +59,48 @@ def make_contrastive_gnn_model(
     if isinstance(inputs[0], dict):
         # Inputs are configuration dictionaries, create actual input tensors
         node_input = ks.layers.Input(**inputs[0])
-        edge_input = ks.layers.Input(**inputs[1])
-        edge_index_input = ks.layers.Input(**inputs[2])
         
-        # Handle additional inputs (edge_indices_reverse, graph_descriptors, etc.)
-        input_tensors = [node_input, edge_input, edge_index_input]
-        
-        # Add edge_indices_reverse if provided (for DGIN, DMPNN, etc.)
-        if len(inputs) > 3:
+        # Determine input structure based on number of inputs
+        if len(inputs) == 3:
+            # ContrastiveGIN: [node_attributes, edge_indices, graph_descriptors]
+            edge_index_input = ks.layers.Input(**inputs[1])
+            graph_descriptors_input = ks.layers.Input(**inputs[2])
+            input_tensors = [node_input, edge_index_input, graph_descriptors_input]
+            # Create dummy edge features for GIN
+            edge_input = None
+        elif len(inputs) == 4:
+            # ContrastiveGAT: [node_attributes, edge_attributes, edge_indices, graph_descriptors]
+            edge_input = ks.layers.Input(**inputs[1])
+            edge_index_input = ks.layers.Input(**inputs[2])
+            graph_descriptors_input = ks.layers.Input(**inputs[3])
+            input_tensors = [node_input, edge_input, edge_index_input, graph_descriptors_input]
+        elif len(inputs) == 5:
+            # ContrastiveDMPNN: [node_attributes, edge_attributes, edge_indices, edge_indices_reverse, graph_descriptors]
+            edge_input = ks.layers.Input(**inputs[1])
+            edge_index_input = ks.layers.Input(**inputs[2])
             edge_reverse_input = ks.layers.Input(**inputs[3])
-            input_tensors.append(edge_reverse_input)
-            
-            # Add graph_descriptors if provided
-            if len(inputs) > 4:
-                graph_descriptors_input = ks.layers.Input(**inputs[4])
-                input_tensors.append(graph_descriptors_input)
+            graph_descriptors_input = ks.layers.Input(**inputs[4])
+            input_tensors = [node_input, edge_input, edge_index_input, edge_reverse_input, graph_descriptors_input]
         else:
-            # Only graph_descriptors provided (for GAT, GATv2, etc.)
+            # Handle other cases (DGIN, etc.)
+            edge_input = ks.layers.Input(**inputs[1])
+            edge_index_input = ks.layers.Input(**inputs[2])
+            input_tensors = [node_input, edge_input, edge_index_input]
+            
+            # Add edge_indices_reverse if provided (for DGIN, etc.)
             if len(inputs) > 3:
-                graph_descriptors_input = ks.layers.Input(**inputs[3])
-                input_tensors.append(graph_descriptors_input)
+                edge_reverse_input = ks.layers.Input(**inputs[3])
+                input_tensors.append(edge_reverse_input)
+                
+                # Add graph_descriptors if provided
+                if len(inputs) > 4:
+                    graph_descriptors_input = ks.layers.Input(**inputs[4])
+                    input_tensors.append(graph_descriptors_input)
+            else:
+                # Only graph_descriptors provided (for GAT, GATv2, etc.)
+                if len(inputs) > 3:
+                    graph_descriptors_input = ks.layers.Input(**inputs[3])
+                    input_tensors.append(graph_descriptors_input)
     else:
         # Inputs are already tensors
         input_tensors = inputs
@@ -183,15 +209,45 @@ def make_contrastive_gnn_model(
             e = input_tensors[1]
         ed = input_tensors[2]  # edge_indices
     else:
-        # For other GNNs, create constant edge features
-        e = ConstantEdgeFeatures(units=units)(input_tensors[2])  # Use edge_indices for constant features
-        ed = input_tensors[2]  # edge_indices
+        # For other GNNs (GIN, etc.), create constant edge features
+        # Determine edge_indices position based on input structure
+        if len(inputs) == 3:
+            # ContrastiveGIN: edge_indices is at position 1
+            ed = input_tensors[1]  # edge_indices
+        else:
+            # Other models: edge_indices is at position 2
+            ed = input_tensors[2]  # edge_indices
+        e = ConstantEdgeFeatures(units=units)(ed)  # Use edge_indices for constant features
     
     # Graph state (descriptors) - handle the case where graph_descriptors is at different positions
     graph_embedding = None
     if use_graph_state:
-        if len(input_tensors) > 4:
-            # We have separate graph_descriptors input (for DGIN, DMPNN, etc.)
+        if len(inputs) == 3:
+            # ContrastiveGIN: graph_descriptors is at position 2
+            if input_embedding and "graph" in input_embedding:
+                graph_embedding_config = input_embedding["graph"].copy()
+                # Use regular Dense layer for graph descriptors (they are regular tensors, not ragged)
+                graph_embedding = ks.layers.Dense(units=graph_embedding_config["output_dim"])(input_tensors[2])
+            else:
+                graph_embedding = input_tensors[2]
+        elif len(inputs) == 4:
+            # ContrastiveGAT: graph_descriptors is at position 3
+            if input_embedding and "graph" in input_embedding:
+                graph_embedding_config = input_embedding["graph"].copy()
+                # Use regular Dense layer for graph descriptors (they are regular tensors, not ragged)
+                graph_embedding = ks.layers.Dense(units=graph_embedding_config["output_dim"])(input_tensors[3])
+            else:
+                graph_embedding = input_tensors[3]
+        elif len(inputs) == 5:
+            # ContrastiveDMPNN: graph_descriptors is at position 4
+            if input_embedding and "graph" in input_embedding:
+                graph_embedding_config = input_embedding["graph"].copy()
+                # Use regular Dense layer for graph descriptors (they are regular tensors, not ragged)
+                graph_embedding = ks.layers.Dense(units=graph_embedding_config["output_dim"])(input_tensors[4])
+            else:
+                graph_embedding = input_tensors[4]
+        elif len(input_tensors) > 4:
+            # We have separate graph_descriptors input (for DGIN, etc.)
             if input_embedding and "graph" in input_embedding:
                 graph_embedding_config = input_embedding["graph"].copy()
                 # Use regular Dense layer for graph descriptors (they are regular tensors, not ragged)
@@ -206,14 +262,6 @@ def make_contrastive_gnn_model(
                 graph_embedding = DenseEmbedding(units=graph_embedding_config["output_dim"])(input_tensors[3])
             else:
                 graph_embedding = input_tensors[3]
-        elif len(input_tensors) == 3 and "graph" in input_embedding:
-            # Graph descriptors might be in the embedding
-            if input_embedding and "graph" in input_embedding:
-                graph_embedding_config = input_embedding["graph"].copy()
-                # Use DenseEmbedding for float inputs (graph descriptors)
-                graph_embedding = DenseEmbedding(units=graph_embedding_config["output_dim"])(input_tensors[2])
-            else:
-                graph_embedding = None
     
     # Create contrastive GNN layers based on type
     if gnn_type.lower() == "gin":

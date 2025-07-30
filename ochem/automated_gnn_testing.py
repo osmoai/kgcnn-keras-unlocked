@@ -19,6 +19,7 @@ import time
 import pandas as pd
 from datetime import datetime
 import json
+import importlib.util
 
 # Add parent directory to Python path to ensure kgcnn modules can be found
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -30,9 +31,92 @@ class AutomatedGNNTester:
         self.config.read(config_file)
         self.results = []
         self.start_time = datetime.now()
+        self.model_configs = self.load_model_configurations()
+    
+    def load_model_configurations(self):
+        """Load model configurations from keras-gcn-descs.py"""
+        print("📚 Loading model configurations from keras-gcn-descs.py...")
+        
+        # Path to keras-gcn-descs.py
+        kgcnn_descs_path = os.path.join(os.path.dirname(__file__), 'keras-gcn-descs.py')
+        
+        if not os.path.exists(kgcnn_descs_path):
+            print(f"❌ keras-gcn-descs.py not found at: {kgcnn_descs_path}")
+            return {}
+        
+        try:
+            # Load the module
+            spec = importlib.util.spec_from_file_location("keras_gcn_descs", kgcnn_descs_path)
+            kgcnn_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(kgcnn_module)
+            
+            # Extract model configurations
+            model_configs = {}
+            
+            # Get all the architecture configurations from the module
+            # We'll look for the architecture_name checks in the code
+            source_code = open(kgcnn_descs_path, 'r').read()
+            
+            # Find all architecture configurations
+            architectures = [
+                'ContrastiveGIN', 'ContrastiveGAT', 'ContrastiveGATv2',
+                'ContrastiveDMPNN', 'ContrastiveAttFP', 'ContrastiveAddGNN',
+                'ContrastiveDGIN', 'ContrastivePNA', 'ContrastiveMoE',
+                'GCN', 'GAT', 'GATv2', 'CMPNN', 'CoAttentiveFP', 'AttentiveFPPlus', 'AttFP',
+                'CMPNNPlus', 'DGIN', 'AddGNN', 'GraphTransformer',
+                'RGCN', 'rGIN', 'rGINE', 'GIN', 'GINE', 'GraphGPS', 'PNA', 'ExpC',
+                'EGAT', 'TransformerGAT', 'GRPE', 'KAGAT', 'DHTNN', 'DMPNN',
+                'AWARE', 'MoGAT', 'MoE', 'ConfigurableMoE',
+                'NMPN'
+            ]
+            
+            for arch in architectures:
+                # Check if this architecture is supported in the module using multiple patterns
+                supported = False
+                
+                # Pattern 1: Direct equality check
+                if f"architecture_name == '{arch}'" in source_code or f"elif architecture_name == '{arch}'" in source_code:
+                    supported = True
+                
+                # Pattern 2: In list checks (like ['ChemProp', 'DMPNN'])
+                elif f"'{arch}'" in source_code and f"architecture_name in" in source_code:
+                    # Look for patterns like "architecture_name in ['ChemProp', 'DMPNN']"
+                    lines = source_code.split('\n')
+                    for line in lines:
+                        if f"architecture_name in" in line and f"'{arch}'" in line:
+                            supported = True
+                            break
+                
+                # Pattern 3: Direct name references in model configs
+                elif f"'name': '{arch}'" in source_code or f'"name": "{arch}"' in source_code:
+                    supported = True
+                
+                # Pattern 4: Module imports (like "kgcnn.literature.NMPN")
+                elif f"kgcnn.literature.{arch}" in source_code:
+                    supported = True
+                
+                if supported:
+                    model_configs[arch] = {
+                        'name': arch,
+                        'supported': True,
+                        'source': 'keras-gcn-descs.py'
+                    }
+                else:
+                    model_configs[arch] = {
+                        'name': arch,
+                        'supported': False,
+                        'source': 'Not found'
+                    }
+            
+            print(f"✅ Loaded {len([k for k, v in model_configs.items() if v['supported']])} supported architectures")
+            return model_configs
+            
+        except Exception as e:
+            print(f"❌ Error loading model configurations: {e}")
+            return {}
         
     def get_architectures_to_test(self):
-        """Read architectures from [Models] section"""
+        """Get architectures to test from config file and validate against supported models"""
         if 'Models' not in self.config:
             print("❌ No [Models] section found in config file!")
             print("Please add a [Models] section with architectures to test.")
@@ -46,9 +130,34 @@ class AutomatedGNNTester:
             print("❌ No architectures specified in [Models] section!")
             return []
         
-        architectures = [arch.strip() for arch in architectures_str.split(',')]
-        print(f"📋 Found {len(architectures)} architectures to test: {', '.join(architectures)}")
-        return architectures
+        requested_architectures = [arch.strip() for arch in architectures_str.split(',')]
+        
+        # Filter to only supported architectures
+        supported_architectures = []
+        unsupported_architectures = []
+        
+        for arch in requested_architectures:
+            if arch in self.model_configs and self.model_configs[arch]['supported']:
+                supported_architectures.append(arch)
+            else:
+                unsupported_architectures.append(arch)
+        
+        if unsupported_architectures:
+            print(f"⚠️  Warning: The following architectures are not supported in keras-gcn-descs.py:")
+            for arch in unsupported_architectures:
+                print(f"   - {arch}")
+            print(f"   These will be skipped.")
+        
+        if not supported_architectures:
+            print("❌ No supported architectures found!")
+            print("Supported architectures:")
+            for arch, config in self.model_configs.items():
+                if config['supported']:
+                    print(f"   - {arch}")
+            return []
+        
+        print(f"📋 Found {len(supported_architectures)} supported architectures to test: {', '.join(supported_architectures)}")
+        return supported_architectures
     
     def backup_config(self):
         """Create a backup of the original config file"""
@@ -77,12 +186,18 @@ class AutomatedGNNTester:
         with open(self.config_file, 'w') as f:
             f.write('\n'.join(lines))
         
+        # Reload the config in memory
+        self.config.read(self.config_file)
+        
         print(f"🔄 Updated config: architecture_name = {architecture}")
     
     def run_training(self, architecture):
         """Run training for a specific architecture"""
         print(f"\n🚀 Training {architecture}...")
         print("=" * 50)
+        
+        # Update architecture name in config
+        self.update_config_architecture(architecture)
         
         # Set train_mode = True
         self.update_config_train_mode(True)
@@ -156,6 +271,9 @@ class AutomatedGNNTester:
         
         with open(self.config_file, 'w') as f:
             f.write('\n'.join(lines))
+        
+        # Reload the config in memory
+        self.config.read(self.config_file)
     
     def extract_training_loss(self, output):
         """Extract final training loss from output"""
@@ -173,39 +291,16 @@ class AutomatedGNNTester:
         return None
     
     def get_model_parameters_tf(self, architecture):
-        """Get model parameters using TensorFlow directly by reading from config file"""
+        """Get model parameters using TensorFlow directly by reading from keras-gcn-descs.py"""
         try:
             import tensorflow as tf
             
-            # Read the actual configuration from the config file
-            if architecture not in self.config:
-                print(f"⚠️  Architecture {architecture} not found in config file, using fallback")
+            # Check if architecture is supported
+            if architecture not in self.model_configs or not self.model_configs[architecture]['supported']:
+                print(f"⚠️  Architecture {architecture} not supported in keras-gcn-descs.py, using fallback")
                 return None
             
-            # Get the architecture section from config
-            arch_config = self.config[architecture]
-            
-            # Parse the configuration
-            config_dict = {}
-            
-            # Parse inputs
-            inputs_str = arch_config.get('inputs', '')
-            if inputs_str:
-                # This is a simplified parser - in practice, you might want to use ast.literal_eval
-                # For now, we'll use a basic approach
-                pass
-            
-            # Parse input_embedding
-            input_embedding_str = arch_config.get('input_embedding', '')
-            
-            # Parse output_mlp
-            output_mlp_str = arch_config.get('output_mlp', '')
-            
-            # For now, let's use a simpler approach - just try to create the model
-            # with the actual config file settings by running the training script
-            # and extracting parameters from the output
-            
-            print(f"🔍 Reading {architecture} configuration from config file...")
+            print(f"🔍 Reading {architecture} configuration from keras-gcn-descs.py...")
             
             # Since we can't easily parse the complex config format here,
             # let's use the fallback method which reads from training output
@@ -284,6 +379,73 @@ class AutomatedGNNTester:
         
         print(f"⚠️  Could not extract parameters from output")
         return None
+
+    def check_sigmoid_outputs(self, architecture):
+        """Check if the model produces proper sigmoid outputs (values between 0 and 1)"""
+        print(f"\n🔍 Checking sigmoid outputs for {architecture}...")
+        
+        # Read the results file
+        results_file = "../../data/odorless_results_desc.csv"
+        if not os.path.exists(results_file):
+            print(f"❌ Results file not found: {results_file}")
+            return None
+        
+        try:
+            # Read the CSV file
+            df = pd.read_csv(results_file)
+            
+            if df.empty:
+                print(f"❌ Results file is empty: {results_file}")
+                return None
+            
+            # Get the first column (should contain the predictions)
+            predictions = df.iloc[:, 0].values
+            
+            # Check if values are in proper sigmoid range (0-1)
+            min_val = float(predictions.min())
+            max_val = float(predictions.max())
+            mean_val = float(predictions.mean())
+            
+            # Check for proper sigmoid behavior
+            sigmoid_ok = 0 <= min_val <= max_val <= 1
+            
+            # Check for extreme values that might indicate issues
+            extreme_negative = min_val < -1
+            extreme_positive = max_val > 2
+            
+            # Check for constant values (no learning)
+            constant_output = max_val - min_val < 0.01
+            
+            sigmoid_status = "✅ GOOD" if sigmoid_ok else "❌ BAD"
+            
+            print(f"   📊 Sigmoid Analysis:")
+            print(f"      Min value: {min_val:.6f}")
+            print(f"      Max value: {max_val:.6f}")
+            print(f"      Mean value: {mean_val:.6f}")
+            print(f"      Range: {max_val - min_val:.6f}")
+            print(f"      Status: {sigmoid_status}")
+            
+            if extreme_negative:
+                print(f"      ⚠️  WARNING: Extreme negative values detected!")
+            if extreme_positive:
+                print(f"      ⚠️  WARNING: Extreme positive values detected!")
+            if constant_output:
+                print(f"      ⚠️  WARNING: Nearly constant output (model not learning)!")
+            
+            return {
+                'min_val': min_val,
+                'max_val': max_val,
+                'mean_val': mean_val,
+                'range': max_val - min_val,
+                'sigmoid_ok': sigmoid_ok,
+                'extreme_negative': extreme_negative,
+                'extreme_positive': extreme_positive,
+                'constant_output': constant_output
+            }
+            
+        except Exception as e:
+            print(f"❌ Error reading results file: {e}")
+            return None
     
     def print_current_config(self, architecture):
         """Print the current configuration for debugging"""
@@ -292,9 +454,21 @@ class AutomatedGNNTester:
         print(f"   Train mode: {self.config.get('Details', 'train_mode', fallback='Not set')}")
         print(f"   Output dim: {self.config.get('Details', 'output_dim', fallback='Not set')}")
         
+        # Check if architecture is supported
+        if architecture in self.model_configs:
+            arch_config = self.model_configs[architecture]
+            if arch_config['supported']:
+                print(f"   ✅ {architecture} is supported in keras-gcn-descs.py")
+                print(f"   Source: {arch_config['source']}")
+            else:
+                print(f"   ❌ {architecture} is NOT supported in keras-gcn-descs.py")
+        else:
+            print(f"   ❓ {architecture} not found in model configurations")
+        
+        # Check config file section (legacy)
         if architecture in self.config:
             arch_config = self.config[architecture]
-            print(f"   {architecture} section found in config")
+            print(f"   📄 {architecture} section found in config file")
             
             # Print key configuration items
             for key in ['name', 'depth', 'output_mlp', 'last_mlp', 'input_embedding']:
@@ -307,7 +481,7 @@ class AutomatedGNNTester:
                 else:
                     print(f"   {key}: Not found")
         else:
-            print(f"   {architecture} section NOT found in config file")
+            print(f"   📄 {architecture} section NOT found in config file (using keras-gcn-descs.py)")
         
         print()
     
@@ -317,13 +491,13 @@ class AutomatedGNNTester:
         print(f"🧪 TESTING ARCHITECTURE: {architecture}")
         print(f"{'='*60}")
         
-        # Print current configuration for debugging
-        self.print_current_config(architecture)
-        
         start_time = time.time()
         
-        # Train the model
+        # Train the model (this will update the config)
         train_success, train_output = self.run_training(architecture)
+        
+        # Print current configuration for debugging (after config is updated)
+        self.print_current_config(architecture)
         
         if not train_success:
             print(f"❌ Training failed for {architecture}, skipping application")
@@ -346,6 +520,11 @@ class AutomatedGNNTester:
         apply_success, apply_output = self.run_application(architecture)
         apply_time = time.time() - apply_start
         
+        # Check sigmoid outputs if application was successful
+        sigmoid_analysis = None
+        if apply_success:
+            sigmoid_analysis = self.check_sigmoid_outputs(architecture)
+        
         # Extract metrics
         final_loss = self.extract_training_loss(train_output)
         # Get parameters using TensorFlow (more reliable)
@@ -363,7 +542,8 @@ class AutomatedGNNTester:
             'train_time': train_time,
             'apply_time': apply_time,
             'train_error': None if train_success else train_output,
-            'apply_error': None if apply_success else apply_output
+            'apply_error': None if apply_success else apply_output,
+            'sigmoid_analysis': sigmoid_analysis
         }
         
         # Print summary
@@ -377,6 +557,15 @@ class AutomatedGNNTester:
         print(f"   {params_str}")
         print(f"   Train Time: {train_time:.1f}s")
         print(f"   Apply Time: {apply_time:.1f}s")
+        
+        # Print sigmoid analysis if available
+        if sigmoid_analysis:
+            sigmoid_status = "✅ GOOD" if sigmoid_analysis['sigmoid_ok'] else "❌ BAD"
+            print(f"   Sigmoid: {sigmoid_status} (Range: {sigmoid_analysis['range']:.4f})")
+            if sigmoid_analysis['extreme_negative'] or sigmoid_analysis['extreme_positive']:
+                print(f"   ⚠️  SIGMOID ISSUES DETECTED!")
+            if sigmoid_analysis['constant_output']:
+                print(f"   ⚠️  CONSTANT OUTPUT DETECTED!")
         
         return result
     
@@ -514,12 +703,27 @@ class AutomatedGNNTester:
         for result in successful_tests:
             loss_str = f"{result['final_loss']:.2f}" if result['final_loss'] is not None else "N/A"
             params_str = f"{result['parameters']:,}" if result['parameters'] is not None else "N/A"
+            
+            # Add sigmoid analysis
+            sigmoid_info = ""
+            if result.get('sigmoid_analysis'):
+                sa = result['sigmoid_analysis']
+                sigmoid_status = "✅ GOOD" if sa['sigmoid_ok'] else "❌ BAD"
+                sigmoid_info = f"""
+- **Sigmoid Analysis**: {sigmoid_status}
+  - Min: {sa['min_val']:.6f}, Max: {sa['max_val']:.6f}, Mean: {sa['mean_val']:.6f}
+  - Range: {sa['range']:.6f}"""
+                if sa['extreme_negative'] or sa['extreme_positive']:
+                    sigmoid_info += "\n  - ⚠️ **SIGMOID ISSUES DETECTED**"
+                if sa['constant_output']:
+                    sigmoid_info += "\n  - ⚠️ **CONSTANT OUTPUT DETECTED**"
+            
             report += f"""#### {result['architecture']}
 - **Final Loss**: {loss_str}
 - **Parameters**: {params_str}
 - **Train Time**: {result['train_time']:.1f}s
 - **Apply Time**: {result['apply_time']:.1f}s
-- **Status**: ✅ Success
+- **Status**: ✅ Success{sigmoid_info}
 
 """
         
