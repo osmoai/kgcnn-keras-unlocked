@@ -582,6 +582,10 @@ def make_contrastive_gnn_model(
     if use_graph_state and graph_embedding is not None:
         # Pool node features to match graph embedding shape
         pooled_nodes = PoolingNodes(pooling_method="sum")(n)
+        # Convert pooled nodes to tensor to match graph_embedding shape
+        pooled_nodes = ks.layers.Lambda(
+            lambda x: tf.RaggedTensor.to_tensor(x) if hasattr(x, 'to_tensor') else x
+        )(pooled_nodes)
         # Concatenate graph embedding with pooled node features
         n = ks.layers.Concatenate()([pooled_nodes, graph_embedding])
     

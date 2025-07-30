@@ -141,16 +141,16 @@ def make_model(name: str = None,
         attention_heads=attention_heads
     )([n, e, edge_index_input, edge_index_reverse_input])
 
-    # Graph state fusion if provided
-    if use_graph_state and graph_embedding is not None:
-        # Concatenate or add graph embedding
-        n = ks.layers.Concatenate()([n, graph_embedding])
-        # Or use attention to fuse
-        # n = GraphAttention(units=edge_dense["units"])([n, graph_embedding])
-
     # Output embedding choice
     if output_embedding == "graph":
         out = PoolingNodesDMPNNAttention(**pooling_args)(n)
+        
+        # Graph state fusion if provided (after pooling to graph level)
+        if use_graph_state and graph_embedding is not None:
+            # Concatenate or add graph embedding
+            out = ks.layers.Concatenate()([out, graph_embedding])
+            # Or use attention to fuse
+            # out = GraphAttention(units=edge_dense["units"])([out, graph_embedding])
     elif output_embedding == "node":
         out = n
     else:

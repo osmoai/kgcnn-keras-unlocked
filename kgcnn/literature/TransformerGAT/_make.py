@@ -106,14 +106,14 @@ def make_model(inputs: list = None,
     for i in range(depth):
         n = TransformerGATLayer(**transformer_gat_args)([n, e, edge_index_input])
 
-    # Graph state fusion if provided
-    if use_graph_state and graph_embedding is not None:
-        # Concatenate or add graph embedding
-        n = ks.layers.Concatenate()([n, graph_embedding])
-
     # Output embedding choice
     if output_embedding == "graph":
         out = PoolingNodesTransformerGAT(pooling_method="sum")(n)
+        
+        # Graph state fusion if provided (after pooling to graph level)
+        if use_graph_state and graph_embedding is not None:
+            # Concatenate or add graph embedding
+            out = ks.layers.Concatenate()([out, graph_embedding])
     elif output_embedding == "node":
         out = n
     else:

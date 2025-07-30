@@ -99,14 +99,14 @@ def make_model(inputs: list = None,
     for i in range(depth):
         n = ExpCLayer(**expc_args)([n, edge_index_input])
 
-    # Graph state fusion if provided
-    if use_graph_state and graph_embedding is not None:
-        # Concatenate or add graph embedding
-        n = ks.layers.Concatenate()([n, graph_embedding])
-
     # Output embedding choice
     if output_embedding == "graph":
         out = PoolingNodesExpC(pooling_method="sum")(n)
+        
+        # Graph state fusion if provided (after pooling to graph level)
+        if use_graph_state and graph_embedding is not None:
+            # Concatenate or add graph embedding
+            out = ks.layers.Concatenate()([out, graph_embedding])
     elif output_embedding == "node":
         out = n
     else:
