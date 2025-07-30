@@ -120,7 +120,7 @@ class MolConverter:
         if num_workers is None:
             num_workers = os.cpu_count()
 
-        if rdkit_smile_to_mol is None and openbabel_smile_to_mol is None:
+        if rdkit_smile_to_mol is None:
             raise ModuleNotFoundError("Can not convert smiles. Missing `RDkit` or `OpenBabel` packages.")
 
         if num_workers == 1:
@@ -145,11 +145,6 @@ class MolConverter:
             if mol is not None:
                 return mol
 
-        if openbabel_smile_to_mol is not None:
-            mol = openbabel_smile_to_mol(smile=smile, sanitize=sanitize, add_hydrogen=add_hydrogen,
-                                         make_conformers=make_conformers, optimize_conformer=optimize_conformer)
-            if mol is not None:
-                return mol
 
         module_logger.warning("Failed conversion for smile '%s'." % smile)
         return None
@@ -213,10 +208,6 @@ class MolConverter:
             if mol is not None:
                 return mol
 
-        if openbabel_smile_to_mol is not None:
-            mol = openbabel_xyz_to_mol(xyz_string, charge)
-            if mol is not None:
-                return mol
 
         module_logger.warning("Failed conversion for xyz '%s'... ." % xyz_string[:20])
         return None
@@ -232,8 +223,8 @@ class MolConverter:
         Returns:
             list: List of mol blocks as string.
         """
-        if openbabel_xyz_to_mol is None and rdkit_xyz_to_mol is None:
-            raise ModuleNotFoundError("Can not convert XYZ to SDF format, missing package `OpenBabel` or `RDkit`.")
+        if rdkit_xyz_to_mol is None:
+            raise ModuleNotFoundError("Can not convert XYZ to SDF format, missing package `RDkit`.")
 
         xyz_list = read_xyz_file(xyz_path)
         mol_list = []
