@@ -7,10 +7,15 @@ Reference:
 
 from ._make import make_model, model_default
 from ._make import make_contrastive_addgnn_model
+from ._make import make_addgnn_pna_model, model_addgnn_pna_default
 from ._addgnn_conv import AddGNNConv
+from ._addgnn_pna_conv import AddGNPPNALayer
 
 __all__ = [
     "make_model",
     "model_default",
-    "make_contrastive_addgnn_model"
+    "make_contrastive_addgnn_model",
+    "make_addgnn_pna_model",
+    "model_addgnn_pna_default",
+    "AddGNPPNALayer"
 ] 

@@ -865,6 +865,278 @@ if architecture_name == 'NMPN':
 
 
 # checked
+if architecture_name == 'GraphTransformer':
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.GraphTransformer",
+            "config": {
+                "name": "GraphTransformer",
+                "inputs": [
+                    {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}
+                ],
+                "input_embedding": {
+                    "node": {"input_dim": 95, "output_dim": 200},
+                    "edge": {"input_dim": 5, "output_dim": 200}
+                },
+                "use_graph_state": False,
+                "transformer_args": {
+                    "units": 200,
+                    "num_heads": 8,
+                    "ff_units": 800,
+                    "dropout": 0.1,
+                    "attention_dropout": 0.1,
+                    "use_edge_features": True,
+                    "use_positional_encoding": False,
+                    "positional_encoding_dim": 64,
+                    "activation": "relu",
+                    "layer_norm_epsilon": 1e-6
+                },
+                "depth": 4,
+                "use_set2set": True,
+                "set2set_args": {"channels": 200, "T": 3, "pooling_method": "sum", "init_qstar": "0"},
+                "pooling_args": {"pooling_method": "segment_sum"},
+                "output_embedding": "graph",
+                "output_to_tensor": True,
+                "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                             "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+            }
+        },
+        "training": {
+            "fit": {
+                "batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2,
+                "callbacks": [
+                    {
+                        "class_name": "kgcnn>LinearLearningRateScheduler", "config": {
+                            "learning_rate_start": 0.001, "learning_rate_stop": 1e-05, "epo_min": 100, "epo": 200,
+                            "verbose": 0
+                        }
+                    }
+                ]
+            },
+            "compile": {
+                "optimizer": {"class_name": "Addons>AdamW", "config": {"lr": 0.001,
+                                                                       "weight_decay": 1e-05}
+                              }
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+            "execute_folds": 1
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "kgcnn_version": "2.0.3"
+        }
+    }
+
+# checked
+if architecture_name == 'GraphGPS':
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.GraphGPS",
+            "config": {
+                "name": "GraphGPS",
+                "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+                           {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                           {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}],
+                "input_node_embedding": {"input_dim": 95, "output_dim": 128},
+                "input_edge_embedding": {"input_dim": 5, "output_dim": 128},
+                "use_graph_state": False,
+                "graphgps_args": {
+                    "units": 128,
+                    "heads": 8,
+                    "dropout": 0.1,
+                    "use_bias": True,
+                    "activation": "relu",
+                    "mp_type": "gcn",
+                    "attn_type": "multihead",
+                    "use_skip_connection": True,
+                    "use_layer_norm": True,
+                    "use_batch_norm": False
+                },
+                "depth": 4,
+                "node_dim": 128,
+                "use_set2set": False,
+                "output_embedding": "graph",
+                "output_to_tensor": True,
+                "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                               "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+            }
+        },
+        "training": {
+            "fit": {
+                "batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2,
+                "callbacks": [
+                    {
+                        "class_name": "kgcnn>LinearLearningRateScheduler", "config": {
+                            "learning_rate_start": 0.001, "learning_rate_stop": 1e-05, "epo_min": 100, "epo": 200,
+                            "verbose": 0
+                        }
+                    }
+                ]
+            },
+            "compile": {
+                "optimizer": {"class_name": "Addons>AdamW", "config": {"lr": 0.001,
+                                                                       "weight_decay": 1e-05}
+                              }
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+            "execute_folds": 1
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "kgcnn_version": "2.0.3"
+        }
+    }
+
+# checked
+if architecture_name == 'PNA':
+    hyper = {
+        "model": {
+            "class_name": "make_model_fixed",
+            "module_name": "kgcnn.literature.PNA._make_fixed",
+            "config": {
+                "name": "PNA",
+                "inputs": [
+                    {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}
+                ],
+                "input_embedding": {"node": {"input_dim": 95, "output_dim": 128}},
+                "pna_args": {"units": 128, "use_bias": True, "activation": "relu",
+                             "aggregators": ["mean", "max", "min", "std"],
+                             "scalers": ["identity", "amplification", "attenuation"],
+                             "dropout_rate": 0.1},
+                "depth": 4,
+                "verbose": 10,
+                "use_graph_state": False,
+                "output_embedding": "graph",
+                "output_to_tensor": True,
+                "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
+                               "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+            }
+        },
+        "training": {
+            "fit": {
+                "batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2,
+                "callbacks": [
+                    {
+                        "class_name": "kgcnn>LinearLearningRateScheduler", "config": {
+                            "learning_rate_start": 0.001, "learning_rate_stop": 1e-05, "epo_min": 100, "epo": 200,
+                            "verbose": 0
+                        }
+                    }
+                ]
+            },
+            "compile": {
+                "optimizer": {"class_name": "Addons>AdamW", "config": {"lr": 0.001,
+                                                                       "weight_decay": 1e-05}
+                              }
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+            "execute_folds": 1
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "kgcnn_version": "2.0.3"
+        }
+    }
+
+# checked
+if architecture_name == 'AddGNN':
+    hyper = {  "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.AddGNN",
+            "config": {
+                "name": "AddGNN",
+                "inputs": [
+                    {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}],
+                "input_embedding": {"node": {"input_dim": 95, "output_dim": 200},
+                                    "edge": {"input_dim": 5, "output_dim": 200}},
+                "addgnn_args": {"units": 200, "heads": 4, "activation": "relu", "use_bias": True},
+                "depth": 3,
+                "node_dim": 200,
+                "use_set2set": True,
+                "set2set_args": {"channels": 32, "T": 3, "pooling_method": "sum", "init_qstar": "0"},
+                "pooling_args": {"pooling_method": "segment_sum"},
+                "output_embedding": "graph",
+                "output_to_tensor": True,
+                "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, 1],
+                             "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+            }
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []},
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": "mean_absolute_error"
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "ESOLDataset",
+                "module_name": "kgcnn.data.datasets.ESOLDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
+# checked
 if architecture_name == 'DGIN':
     hyper = {  "model": {
             "class_name": "make_model",
@@ -1620,6 +1892,61 @@ if architecture_name == 'GINE':
         }
     }
 
+if architecture_name == 'rGINE':
+    hyper = {
+        "model": {
+            "class_name": "make_model_edge",
+            "module_name": "kgcnn.literature.rGIN",
+            "config": {
+                "name": "rGINE",
+                "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+                           {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                           {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}],
+                "input_embedding": {"node": {"input_dim": 96, "output_dim": 100},
+                                    "edge": {"input_dim": 5, "output_dim": 100}},
+                "depth": 4,
+                "dropout": 0.1,
+                "gin_mlp": {"units": [100, 100], "use_bias": True, "activation": ["relu", "relu"],
+                            "use_normalization": True, "normalization_technique": "graph_batch"},
+                "rgine_args": {"random_range": 100},
+                "last_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
+                             "activation": ["kgcnn>leaky_relu", "selu", "linear"]},
+                "output_embedding": "graph", "output_to_tensor": True,
+                "output_mlp": {"use_bias": True, "units": output_dim, "activation": "linear"}
+            }
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                              },
+                "loss": "RMSEmask"
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}}
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": []
+            },
+            "data_unit": "unit"
+        },
+        "info": {
+            "postfix": "",
+            "kgcnn_version": "2.0.3"
+        }
+    }
+
 # Print to visually make sure we have parsed correctly the parameters
 print("My parameters")
 print("Loss", nn_loss)
@@ -1692,7 +2019,7 @@ if TRAIN == "True":
     dataset.assert_valid_model_input(hyperparams["model"]["config"]["inputs"])  # failed for GCN code here
 
     # Model identification
-    make_model = get_model_class(hyperparams["model"]["config"]["name"], hyperparams["model"]["class_name"])
+    make_model = get_model_class(hyperparams["model"]["module_name"], hyperparams["model"]["class_name"])
 
     # check Dataset
     data_name = dataset.dataset_name
@@ -1784,7 +2111,28 @@ else:
     cols = ['Result%s' % (i) for i in range(output_dim)]  # change this for MTL tasks not the case today
     descs = ['desc%s' % (i) for i in range(desc_dim)]
 
-    inputs = hyper["model"]["config"]["inputs"]
+    # Model creation
+    make_model = get_model_class(hyper["model"]["module_name"], hyper["model"]["class_name"])
+
+    # Fix to make models working with the saved old ChemProp models
+    if 'use_graph_state' in hyper["model"]["config"].keys():
+        r = dict(hyper["model"]["config"])
+        # If use_descriptors is False, set use_graph_state to False and remove graph_descriptors from inputs
+        if getConfig("Details", "use_descriptors", "False").lower() == "false":
+            r['use_graph_state'] = False
+            # For DGIN, we need to keep edge_indices_reverse (4th input)
+            if len(r['inputs']) > 4 and r['name'] != 'DGIN':
+                r['inputs'] = r['inputs'][:3]  # Keep only node_attributes, edge_attributes, edge_indices
+            elif len(r['inputs']) > 4 and r['name'] == 'DGIN':
+                r['inputs'] = r['inputs'][:4]  # Keep node_attributes, edge_attributes, edge_indices, edge_indices_reverse
+        else:
+            del r['use_graph_state']
+        model = make_model(**r)
+        # Update inputs to match the fixed config
+        inputs = r['inputs']
+    else:
+        model = make_model(**hyper['model']["config"])
+        inputs = hyper["model"]["config"]["inputs"]
 
     print('evaluation')
     dataset, invalid = prepData(APPLY_FILE,cols, hyper = hyper, modelname=architecture_name, overwrite=overwrite, descs=descs)
@@ -1792,17 +2140,6 @@ else:
     print('-' * 10)
     print('error graphs:', invalid)
     print('-' * 10)
-
-    # Model creation
-    make_model = get_model_class(hyper["model"]["config"]["name"], hyper["model"]["class_name"])
-
-    # Fix to make models working with the saved old ChemProp models
-    if 'use_graph_state' in hyper["model"]["config"].keys():
-        r = dict(hyper["model"]["config"])
-        del r['use_graph_state']
-        model = make_model(**r)
-    else:
-        model = make_model(**hyper['model']["config"])
     # load stored best weights
 
     model.load_weights(modelname)

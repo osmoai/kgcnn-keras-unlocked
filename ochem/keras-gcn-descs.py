@@ -431,6 +431,7 @@ MODEL_FILE = getConfig("Task", "model_file");
 TRAIN_FILE = getConfig("Task", "train_data_file");
 APPLY_FILE = getConfig("Task", "apply_data_file", "train.csv");
 RESULT_FILE = getConfig("Task", "result_file", "results.csv");
+
 # Define details options from config.cfg
 nbepochs = int(getConfig("Details", "nbepochs", 100));
 seed = int(getConfig("Details", "seed", 101));
@@ -1310,7 +1311,7 @@ elif architecture_name in ['NMPN','MPNN']:
                 'input_embedding': {"node": {"input_dim": 95, "output_dim": 128},
                                     "edge": {"input_dim": 95, "output_dim": 128},
                                     "graph": {"input_dim": 100, "output_dim": 64}},
-                'gauss_args': {"bins": 20, "distance": 4, "offset": 0.0, "sigma": 0.4},
+                # 'gauss_args': {"bins": 20, "distance": 4, "offset": 0.0, "sigma": 0.4},  # Not needed for PNA
                 'set2set_args': {'channels': 64, 'T': 3, "pooling_method": "sum", "init_qstar": "0"},
                 'pooling_args': {'pooling_method': "segment_sum"},
                 'edge_mlp': {'use_bias': True, 'activation': 'swish', "units": [64, 64]},
@@ -1486,6 +1487,263 @@ elif architecture_name == 'AddGNN':
         "model": {
             "class_name": "make_model",
             "module_name": "kgcnn.literature.AddGNN",
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": "mean_absolute_error"
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "ESOLDataset",
+                "module_name": "kgcnn.data.datasets.ESOLDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}},
+                    {"map_list": {"method": "set_edge_indices_reverse"}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
+# AddGNN-PNA (Additive Attention GNN with PNA aggregation) with descriptor support
+elif architecture_name == 'AddGNN-PNA':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found AddGNN-PNA architecture!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "AddGNN-PNA",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 200},
+            "edge": {"input_dim": 5, "output_dim": 200},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "use_graph_state": True,  # Enable graph state for descriptors
+        "addgnn_pna_args": {
+            "units": 200, 
+            "activation": "relu", 
+            "use_bias": True,
+            "aggregators": ["mean", "max", "min"],
+            "scalers": ["identity", "amplification", "attenuation"],
+            "delta": 1.0,
+            "dropout_rate": 0.1,
+            "use_edge_features": True,
+            "use_skip_connection": True
+        },
+        "depth": 3,
+        "node_dim": 200,
+        "use_set2set": True,
+        "set2set_args": {"channels": 32, "T": 3, "pooling_method": "sum", "init_qstar": "0"},
+        "pooling_args": {"pooling_method": "segment_sum"},
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+    }
+    
+    # Update output dimensions based on config file
+    model_config = update_output_dimensions(model_config, architecture_name)
+    
+    hyper = {
+        "model": {
+            "class_name": "make_addgnn_pna_model",
+            "module_name": "kgcnn.literature.AddGNN",
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": "mean_absolute_error"
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "ESOLDataset",
+                "module_name": "kgcnn.data.datasets.ESOLDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}},
+                    {"map_list": {"method": "set_edge_indices_reverse"}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
+# CMPNN-PNA (Communication-Efficient Graph Neural Networks with PNA aggregation) with descriptor support
+elif architecture_name == 'CMPNN-PNA':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found CMPNN-PNA architecture!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "CMPNN-PNA",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 200},
+            "edge": {"input_dim": 5, "output_dim": 200},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "use_graph_state": True,  # Enable graph state for descriptors
+        "cmpnn_pna_args": {
+            "units": 200, 
+            "use_bias": True, 
+            "activation": "relu",
+            "aggregators": ["mean", "max", "min", "std"],
+            "scalers": ["identity", "amplification", "attenuation"],
+            "delta": 1.0,
+            "dropout_rate": 0.1
+        },
+        "depth": 3,
+        "node_dim": 200,
+        "use_set2set": True,
+        "set2set_args": {"channels": 200, "T": 3, "pooling_method": "sum", "init_qstar": "0"},
+        "pooling_args": {"pooling_method": "segment_sum"},
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+    }
+    
+    # Update output dimensions based on config file
+    model_config = update_output_dimensions(model_config, architecture_name)
+    
+    hyper = {
+        "model": {
+            "class_name": "make_cmpnn_pna_model",
+            "module_name": "kgcnn.literature.CMPNN",
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": "mean_absolute_error"
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "ESOLDataset",
+                "module_name": "kgcnn.data.datasets.ESOLDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}},
+                    {"map_list": {"method": "set_edge_indices_reverse"}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
+# RGCN-PNA (Relational Graph Convolutional Network with PNA aggregation) with descriptor support
+elif architecture_name == 'RGCN-PNA':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found RGCN-PNA architecture!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "RGCN-PNA",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 200},
+            "edge": {"input_dim": 5, "output_dim": 200},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "use_graph_state": True,  # Enable graph state for descriptors
+        "rgcn_pna_args": {
+            "units": 200, 
+            "use_bias": True, 
+            "activation": "relu",
+            "aggregators": ["mean", "max", "min", "std"],
+            "scalers": ["identity", "amplification", "attenuation"],
+            "delta": 1.0,
+            "dropout_rate": 0.1
+        },
+        "depth": 3,
+        "node_dim": 200,
+        "use_set2set": True,
+        "set2set_args": {"channels": 200, "T": 3, "pooling_method": "sum", "init_qstar": "0"},
+        "pooling_args": {"pooling_method": "segment_sum"},
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+    }
+    
+    # Update output dimensions based on config file
+    model_config = update_output_dimensions(model_config, architecture_name)
+    
+    hyper = {
+        "model": {
+            "class_name": "make_rgcn_pna_model",
+            "module_name": "kgcnn.literature.RGCN",
             "config": model_config
         },
         "training": {
@@ -4333,6 +4591,15 @@ if TRAIN == "True":
         elif architecture_name == 'ContrastiveAddGNN':
             from kgcnn.literature.ContrastiveGNN import make_contrastive_addgnn_model
             model = make_contrastive_addgnn_model(**hyperparam['model']["config"])
+        elif architecture_name == 'AddGNN-PNA':
+            from kgcnn.literature.AddGNN import make_addgnn_pna_model
+            model = make_addgnn_pna_model(**hyperparam['model']["config"])
+        elif architecture_name == 'CMPNN-PNA':
+            from kgcnn.literature.CMPNN import make_cmpnn_pna_model
+            model = make_cmpnn_pna_model(**hyperparam['model']["config"])
+        elif architecture_name == 'RGCN-PNA':
+            from kgcnn.literature.RGCN import make_rgcn_pna_model
+            model = make_rgcn_pna_model(**hyperparam['model']["config"])
         elif architecture_name == 'ContrastiveDGIN':
             from kgcnn.literature.ContrastiveGNN import make_contrastive_dgin_model
             model = make_contrastive_dgin_model(**hyperparam['model']["config"])
@@ -4428,7 +4695,9 @@ if TRAIN == "True":
     else:
         # Use appropriate metrics based on loss function
         if lossdef in ["BCEmask", "CCEmask", "binary_crossentropy", "categorical_crossentropy"]:
-            model.compile(opt, loss=loss_function, metrics=['accuracy'])
+            # Debug: Try using a simple loss function
+            print("DEBUG: Using binary_crossentropy for debugging")
+            model.compile(opt, loss="binary_crossentropy", metrics=['accuracy'])
         else:
             model.compile(opt, loss=loss_function, metrics=[metric_fn])
 
