@@ -2111,28 +2111,15 @@ else:
     cols = ['Result%s' % (i) for i in range(output_dim)]  # change this for MTL tasks not the case today
     descs = ['desc%s' % (i) for i in range(desc_dim)]
 
-    # Model creation
+    # Model creation - use exact saved configuration like keras-gcn-descs.py
     make_model = get_model_class(hyper["model"]["module_name"], hyper["model"]["class_name"])
-
-    # Fix to make models working with the saved old ChemProp models
-    if 'use_graph_state' in hyper["model"]["config"].keys():
-        r = dict(hyper["model"]["config"])
-        # If use_descriptors is False, set use_graph_state to False and remove graph_descriptors from inputs
-        if getConfig("Details", "use_descriptors", "False").lower() == "false":
-            r['use_graph_state'] = False
-            # For DGIN, we need to keep edge_indices_reverse (4th input)
-            if len(r['inputs']) > 4 and r['name'] != 'DGIN':
-                r['inputs'] = r['inputs'][:3]  # Keep only node_attributes, edge_attributes, edge_indices
-            elif len(r['inputs']) > 4 and r['name'] == 'DGIN':
-                r['inputs'] = r['inputs'][:4]  # Keep node_attributes, edge_attributes, edge_indices, edge_indices_reverse
-        else:
-            del r['use_graph_state']
-        model = make_model(**r)
-        # Update inputs to match the fixed config
-        inputs = r['inputs']
-    else:
-        model = make_model(**hyper['model']["config"])
-        inputs = hyper["model"]["config"]["inputs"]
+    
+    # Use the exact saved model configuration without modifications
+    print("🔒 Inference mode: Using saved model configuration exactly as trained")
+    print(f"Saved model inputs: {[inp['name'] for inp in hyper['model']['config']['inputs']]}")
+    
+    model = make_model(**hyper['model']["config"])
+    inputs = hyper["model"]["config"]["inputs"]
 
     print('evaluation')
     dataset, invalid = prepData(APPLY_FILE,cols, hyper = hyper, modelname=architecture_name, overwrite=overwrite, descs=descs)

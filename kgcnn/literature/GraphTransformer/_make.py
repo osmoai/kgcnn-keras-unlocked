@@ -108,11 +108,9 @@ def make_model(inputs: list = None,
     else:
         graph_descriptors_input = None
 
-    # Embedding layers
-    n = OptionalInputEmbedding(**input_embedding['node'],
-                               use_embedding=len(inputs[0]['shape']) < 2)(node_input)
-    e = OptionalInputEmbedding(**input_embedding['edge'],
-                               use_embedding=len(inputs[1]['shape']) < 2)(edge_input)
+    # Use Dense layers for 2D inputs instead of OptionalInputEmbedding
+    n = Dense(input_embedding['node']['output_dim'], activation='linear')(node_input)
+    e = Dense(input_embedding['edge']['output_dim'], activation='linear')(edge_input)
     
     # Embed graph_descriptors if provided
     if graph_descriptors_input is not None and "graph" in input_embedding:
