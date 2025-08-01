@@ -1,7 +1,7 @@
 import tensorflow as tf
 from kgcnn.layers.casting import ChangeTensorType
 from kgcnn.layers.gather import GatherNodesOutgoing, GatherState
-from kgcnn.layers.modules import Dense, LazyConcatenate, Activation, LazyAdd, Dropout, \
+from kgcnn.layers.modules import Dense, LazyConcatenate, Activation, Dropout, \
     OptionalInputEmbedding
 from kgcnn.layers.attention import AttentionHeadGAT
 from kgcnn.layers.mlp import GraphMLP, MLP
@@ -87,7 +87,7 @@ def make_model(name: str = None,
         name (str): Name of the model. Should be "DMPNNAttention".
         inputs (list): List of dictionaries unpacked in :obj:`tf.keras.layers.Input`. Order must match model definition.
         input_embedding (dict): Dictionary of embedding arguments for nodes etc. unpacked in :obj:`Embedding` layers.
-        pooling_args (dict): Dictionary of layer arguments unpacked in :obj:`PoolingNodesDMPNNAttention`,
+        pooling_args (dict): Dictionary of layer arguments unpacked in :obj:`PoolingNodes`,
             :obj:`AggregateLocalEdges` layers.
         edge_initialize (dict): Dictionary of layer arguments unpacked in :obj:`Dense` layer for first edge embedding.
         edge_dense (dict): Dictionary of layer arguments unpacked in :obj:`Dense` layer for edge embedding.

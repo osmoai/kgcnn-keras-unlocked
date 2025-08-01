@@ -1,6 +1,6 @@
 import tensorflow as tf
 from kgcnn.layers.base import GraphBaseLayer
-from kgcnn.layers.modules import Dense, Dropout, LazyConcatenate, Activation, LazyAdd
+from kgcnn.layers.modules import Dense, Dropout, LazyConcatenate, Activation
 from kgcnn.layers.gather import GatherNodesOutgoing
 from kgcnn.layers.aggr import AggregateLocalEdges
 from kgcnn.layers.attention import AttentionHeadGAT
@@ -8,12 +8,9 @@ from kgcnn.layers.attention import AttentionHeadGAT
 ks = tf.keras
 
 class DMPNNAttentionPoolingEdges(GraphBaseLayer):
-    r"""DMPNN with Attention Pooling following standard DMPNN pattern.
-    
-    This implementation follows the same pattern as the standard DMPNN:
-    1. Initialize edge features by concatenating node and edge features
-    2. Use standard DMPNN message passing
-    3. Apply attention-based pooling at the end
+    r"""Minimal DMPNN with Attention Pooling.
+    Standard DMPNN message passing, attention-based pooling at the end.
+    No skip connections, no dimension mismatches.
     """
     def __init__(self, edge_initialize=None, edge_dense=None, edge_activation=None, node_dense=None,
                  dropout=None, depth=None, attention_units=128, attention_heads=8,
@@ -28,7 +25,6 @@ class DMPNNAttentionPoolingEdges(GraphBaseLayer):
         self.gather_nodes_outgoing = GatherNodesOutgoing()
         self.aggregate_edges = AggregateLocalEdges(pooling_method="sum")
         self.lazy_concat = LazyConcatenate(axis=-1)
-        self.lazy_add = LazyAdd()
         self.use_attention_in_message_passing = use_attention_in_message_passing
         if use_attention_in_message_passing:
             self.attention_pooling = AttentionHeadGAT(
@@ -50,9 +46,6 @@ class DMPNNAttentionPoolingEdges(GraphBaseLayer):
         edge_features = self.lazy_concat([node_features_outgoing, edge_attributes])
         edge_features = self.edge_initialize_layer(edge_features)
         
-        # Store initial edge features for skip connections
-        edge_features_initial = edge_features
-        
         # DMPNN message passing
         for _ in range(self.depth):
             # Aggregate edge features to nodes
@@ -65,10 +58,7 @@ class DMPNNAttentionPoolingEdges(GraphBaseLayer):
             edge_node_features = self.lazy_concat([node_features_outgoing, edge_attributes])
             
             # Apply edge MLP
-            edge_features_updated = self.edge_dense_layer(edge_node_features)
-            
-            # Skip connection (like in standard DMPNN)
-            edge_features = self.lazy_add([edge_features_updated, edge_features_initial])
+            edge_features = self.edge_dense_layer(edge_node_features)
             
             # Apply activation
             edge_features = self.edge_activation_layer(edge_features)
