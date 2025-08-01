@@ -2231,8 +2231,8 @@ if architecture_name == 'MultiChem':
                 "use_graph_state": False,
                 "output_embedding": "graph",
                 "output_to_tensor": True,
-                "output_mlp": {"use_bias": [True, True, True], "units": [256, 128, 1],
-                               "activation": ["relu", "relu", "linear"]}
+                "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, 1],
+                               "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
             }
         },
         "training": {

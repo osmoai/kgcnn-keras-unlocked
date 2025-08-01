@@ -417,7 +417,27 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
         
         dataset.set_methods(hyper_dict["data"]["dataset"]["methods"])
 
-
+    # Generate edge_indices_reverse for directed models
+    if modelname in ['MultiChem', 'DMPNN', 'DMPNNAttention', 'DGIN', 'EGAT', 'TransformerGAT', 'DHTNN', 'DHTNNPlus']:
+        print(f"Generating edge_indices_reverse for {modelname} model...")
+        import numpy as np
+        for graph in dataset:
+            if 'edge_indices' in graph and 'edge_indices_reverse' not in graph:
+                # Create reverse edge indices
+                edge_indices = np.array(graph['edge_indices'])
+                edge_indices_reverse = []
+                for i, edge in enumerate(edge_indices):
+                    # Find the reverse edge
+                    reverse_edge = np.array([edge[1], edge[0]])
+                    # Find matching reverse edges
+                    matches = np.where((edge_indices == reverse_edge).all(axis=1))[0]
+                    if len(matches) > 0:
+                        reverse_idx = matches[0]
+                        edge_indices_reverse.append(reverse_idx)
+                    else:
+                        # If reverse edge doesn't exist, use the same edge
+                        edge_indices_reverse.append(i)
+                graph['edge_indices_reverse'] = np.array(edge_indices_reverse).reshape(-1, 1)
 
     invalid = dataset.clean(hyper_dict["model"]["config"]["inputs"])
     # I guess clean first and assert clean ok
@@ -4390,6 +4410,85 @@ elif architecture_name == 'ConfigurableMoE':
         }
     }
 
+# MultiChem implementation with descriptors support
+elif architecture_name == 'MultiChem':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found MultiChem architecture with DUAL processing and descriptors!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "MultiChem",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "use_directed": True,
+        "use_dual_features": True,
+        "units": 128,
+        "num_heads": 8,
+        "depth": 4,
+        "dropout": 0.1,
+        "attention_dropout": 0.1,
+        "use_residual": True,
+        "pooling_args": {"pooling_method": "sum", "use_dual_features": True},
+        "use_graph_state": True,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, True], "units": [256, 128, output_dim],
+                     "activation": ["relu", "relu", "linear"]}
+    }
+    
+    # Update output dimensions based on config file
+    model_config = update_output_dimensions(model_config, architecture_name)
+    
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.MultiChem",
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
 # Print to visually make sure we have parsed correctly the parameters
 print("My parameters")
 print("Loss", nn_loss)
@@ -4616,6 +4715,9 @@ if TRAIN == "True":
         elif architecture_name == 'ConfigurableMoE':
             from kgcnn.literature.MultiGraphMoE import make_configurable_moe_model
             model = make_configurable_moe_model(**hyperparam['model']["config"])
+        elif architecture_name == 'MultiChem':
+            from kgcnn.literature.MultiChem import make_model
+            model = make_model(**hyperparam['model']["config"])
         else:
             # For other contrastive models, use the complex ContrastiveGNN module
             model = make_model(**hyperparam['model']["config"])
