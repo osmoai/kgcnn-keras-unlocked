@@ -72,6 +72,10 @@ class CoAttentiveHeadFP(GraphBaseLayer):
             )
         
         self.dropout = Dropout(dropout_rate)
+        
+        # Input projection to match attention output dimension
+        self.input_projection = Dense(units, activation="linear", use_bias=use_bias)
+        
         self.gru_update = GRUUpdate(units)
         
     def call(self, inputs, **kwargs):
@@ -113,8 +117,11 @@ class CoAttentiveHeadFP(GraphBaseLayer):
         # Apply dropout and GRU update
         output = self.dropout(output)
         
-        # GRU update with original node features
-        output = self.gru_update([node_attributes, output])
+        # Project input node features to match attention output dimension
+        node_attributes_projected = self.input_projection(node_attributes)
+        
+        # GRU update with projected node features
+        output = self.gru_update([node_attributes_projected, output])
         
         return output
     
