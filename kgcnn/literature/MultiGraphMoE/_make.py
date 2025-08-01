@@ -13,6 +13,13 @@ from kgcnn.layers.modules import OptionalInputEmbedding
 from kgcnn.model.utils import update_model_kwargs
 from ._multigraph_moe_conv import MultiGraphMoEConv, GraphRepresentationLayer, ExpertRoutingLayer
 
+# Import the generalized input handling utilities
+from kgcnn.utils.input_utils import (
+    get_input_names, find_input_by_name, create_input_layer,
+    check_descriptor_input, create_descriptor_processing_layer,
+    fuse_descriptors_with_output, build_model_inputs
+)
+
 ks = tf.keras
 
 # Keep track of model version from commit date in literature.
@@ -88,28 +95,39 @@ def make_model(inputs: list = None,
         tf.keras.Model: Multi-Graph MoE model
     """
     
-    # Make input
-    node_input = ks.layers.Input(**inputs[0])
-    edge_input = ks.layers.Input(**inputs[1])
-    edge_index_input = ks.layers.Input(**inputs[2])
+    # ROBUST: Use generalized input handling
+    input_names = get_input_names(inputs)
+    print(f"🔍 Input names: {input_names}")
     
-    # Handle graph_descriptors input if provided (for descriptors)
-    if len(inputs) > 3:
-        graph_descriptors_input = ks.layers.Input(**inputs[3])
-    else:
-        graph_descriptors_input = None
+    # Create input layers using name-based lookup
+    input_layers = {}
+    for i, input_config in enumerate(inputs):
+        name = input_config['name']
+        input_layers[name] = create_input_layer(input_config)
+        print(f"✅ Created input layer: {name} at position {i}")
+    
+    # Extract required inputs
+    node_input = input_layers['node_attributes']
+    edge_input = input_layers['edge_attributes'] 
+    edge_index_input = input_layers['edge_indices']
+    
+    # Check for optional descriptor input
+    descriptor_result = check_descriptor_input(inputs)
+    graph_descriptors_input = None
+    if descriptor_result:
+        idx, config = descriptor_result
+        graph_descriptors_input = input_layers['graph_descriptors']
     
     # Embedding
     n = OptionalInputEmbedding(**input_embedding["node"])(node_input)
     e = OptionalInputEmbedding(**input_embedding["edge"])(edge_input)
     
-    # Graph state embedding if provided
-    if use_graph_state and graph_descriptors_input is not None:
-        graph_embedding = OptionalInputEmbedding(
-            **input_embedding.get("graph", {"input_dim": 100, "output_dim": 64})
-        )(graph_descriptors_input)
-    else:
-        graph_embedding = None
+    # ROBUST: Use generalized descriptor processing
+    graph_embedding = create_descriptor_processing_layer(
+        graph_descriptors_input, 
+        input_embedding, 
+        layer_name="graph_descriptor_processing"
+    )
     
     # Multi-Graph MoE layers
     for i in range(depth):
@@ -123,12 +141,12 @@ def make_model(inputs: list = None,
         if i < depth - 1 and multigraph_moe_args.get("dropout_rate", 0) > 0:
             n = Dropout(multigraph_moe_args["dropout_rate"])(n)
     
-    # Graph state fusion if provided
-    if use_graph_state and graph_embedding is not None:
+    # ROBUST: Use generalized descriptor fusion
+    if graph_embedding is not None:
         # Pool node features to match graph embedding shape
         pooled_nodes = PoolingNodes(**pooling_nodes_args)(n)
-        # Concatenate graph embedding with pooled node features
-        n = ks.layers.Concatenate()([pooled_nodes, graph_embedding])
+        # Fuse descriptors with pooled node features
+        n = fuse_descriptors_with_output(pooled_nodes, graph_embedding, fusion_method="concatenate")
     
     # Output embedding choice
     if output_embedding == "graph":
@@ -145,10 +163,9 @@ def make_model(inputs: list = None,
     # Output MLP
     out = MLP(**output_mlp)(out)
     
-    # Model
-    model = ks.Model(inputs=[node_input, edge_input, edge_index_input] + 
-                    ([graph_descriptors_input] if graph_descriptors_input is not None else []),
-                    outputs=out, name=name)
+    # ROBUST: Use generalized model input building
+    model_inputs = build_model_inputs(inputs, input_layers)
+    model = ks.Model(inputs=model_inputs, outputs=out, name=name)
     
     return model 
 
