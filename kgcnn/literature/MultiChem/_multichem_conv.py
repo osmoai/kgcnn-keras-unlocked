@@ -36,31 +36,28 @@ class MultiChemAttention(GraphBaseLayer):
         
         # Multi-head attention for different scales
         self.node_attention = AttentionHeadGAT(
-            units=units // num_heads,
+            units=units,
             use_bias=True,
             activation="relu",
-            use_edge_features=True,
-            num_heads=num_heads
+            use_edge_features=True
         )
         
         # Edge attention for dual features
         if self.use_dual_features:
             self.edge_attention = AttentionHeadGAT(
-                units=units // num_heads,
+                units=units,
                 use_bias=True,
                 activation="relu",
-                use_edge_features=True,
-                num_heads=num_heads
+                use_edge_features=True
             )
         
         # Directional attention for directed graphs
         if self.use_directed:
             self.directed_attention = AttentionHeadGAT(
-                units=units // num_heads,
+                units=units,
                 use_bias=True,
                 activation="relu",
-                use_edge_features=True,
-                num_heads=num_heads
+                use_edge_features=True
             )
         
         # Feature fusion layers
@@ -214,6 +211,11 @@ class MultiChemLayer(GraphBaseLayer):
         # Dropout
         self.dropout_layer = Dropout(dropout)
         
+        # Input projection layers for residual connections
+        self.node_input_projection = Dense(units, activation="linear", use_bias=True)
+        if self.use_dual_features:
+            self.edge_input_projection = Dense(units, activation="linear", use_bias=True)
+        
         # Residual connections
         if self.use_residual:
             self.node_residual = LazyAdd()
@@ -240,9 +242,12 @@ class MultiChemLayer(GraphBaseLayer):
             node_features, edge_features, edge_indices = inputs
             edge_indices_reverse = edge_indices
         
-        # Store original features for residual connections
-        node_original = node_features
-        edge_original = edge_features
+        # Store original features for residual connections (project to correct dimension)
+        node_original = self.node_input_projection(node_features)
+        if self.use_dual_features:
+            edge_original = self.edge_input_projection(edge_features)
+        else:
+            edge_original = edge_features
         
         # Multi-scale attention
         attention_inputs = [node_features, edge_features, edge_indices]

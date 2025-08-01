@@ -228,7 +228,8 @@ def make_undirected_model(name: str = None,
                          use_graph_state: bool = False,
                          output_embedding: str = None,
                          output_to_tensor: bool = None,
-                         output_mlp: dict = None
+                         output_mlp: dict = None,
+                         **kwargs  # Add kwargs to handle any extra parameters
                          ):
     r"""Make undirected `MultiChem` graph network via functional API.
     

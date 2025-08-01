@@ -8,10 +8,11 @@ MultiChem is a multi-modal chemical modeling framework that supports:
 """
 
 from ._multichem_conv import MultiChemLayer, MultiChemAttention
-from ._make import make_model
+from ._make import make_model, make_undirected_model
 
 __all__ = [
     "MultiChemLayer",
     "MultiChemAttention", 
-    "make_model"
+    "make_model",
+    "make_undirected_model"
 ] 
