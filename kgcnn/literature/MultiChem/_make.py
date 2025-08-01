@@ -43,31 +43,7 @@ model_default = {
                    "activation": ["relu", "relu", "linear"]}
 }
 
-# Undirected version configuration
-model_undirected_default = {
-    "name": "MultiChemUndirected",
-    "inputs": [
-        {"shape": (None,), "name": "node_attributes", "dtype": "float32", "ragged": True},
-        {"shape": (None,), "name": "edge_attributes", "dtype": "float32", "ragged": True},
-        {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True}],
-    "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
-                        "edge": {"input_dim": 5, "output_dim": 128},
-                        "graph": {"input_dim": 100, "output_dim": 64}},
-    "use_directed": False,
-    "use_dual_features": True,
-    "units": 128,
-    "num_heads": 8,
-    "depth": 4,
-    "dropout": 0.1,
-    "attention_dropout": 0.1,
-    "use_residual": True,
-    "pooling_args": {"pooling_method": "sum", "use_dual_features": True},
-    "use_graph_state": False,
-    "output_embedding": "graph",
-    "output_to_tensor": True,
-    "output_mlp": {"use_bias": [True, True, True], "units": [256, 128, 1],
-                   "activation": ["relu", "relu", "linear"]}
-}
+
 
 
 @update_model_kwargs(model_default)
@@ -213,50 +189,4 @@ def make_model(name: str = None,
     return model
 
 
-@update_model_kwargs(model_undirected_default)
-def make_undirected_model(name: str = None,
-                         inputs: list = None,
-                         input_embedding: dict = None,
-                         use_dual_features: bool = True,
-                         units: int = 128,
-                         num_heads: int = 8,
-                         depth: int = 4,
-                         dropout: float = 0.1,
-                         attention_dropout: float = 0.1,
-                         use_residual: bool = True,
-                         pooling_args: dict = None,
-                         use_graph_state: bool = False,
-                         output_embedding: str = None,
-                         output_to_tensor: bool = None,
-                         output_mlp: dict = None,
-                         **kwargs  # Add kwargs to handle any extra parameters
-                         ):
-    r"""Make undirected `MultiChem` graph network via functional API.
-    
-    This is a convenience function for creating undirected MultiChem models.
-    It sets `use_directed=False` and calls the main `make_model` function.
-    
-    Args:
-        Same as `make_model` but without `use_directed` parameter.
-        
-    Returns:
-        :obj:`tf.keras.models.Model`
-    """
-    return make_model(
-        name=name,
-        inputs=inputs,
-        input_embedding=input_embedding,
-        use_directed=False,
-        use_dual_features=use_dual_features,
-        units=units,
-        num_heads=num_heads,
-        depth=depth,
-        dropout=dropout,
-        attention_dropout=attention_dropout,
-        use_residual=use_residual,
-        pooling_args=pooling_args,
-        use_graph_state=use_graph_state,
-        output_embedding=output_embedding,
-        output_to_tensor=output_to_tensor,
-        output_mlp=output_mlp
-    ) 
+ 
