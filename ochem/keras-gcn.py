@@ -1838,6 +1838,231 @@ if architecture_name == 'GIN':
         }
     }
 
+# AttentiveFP+ (Multi-scale Attention Fusion) - Enhanced AttFP with multi-scale attention
+if architecture_name == 'AttentiveFPPlus':
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.AttentiveFPPlus",
+            "config": {
+                "name": "AttentiveFPPlus",
+                "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32","ragged": True},
+                           {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32","ragged": True},
+                           {"shape": [None, 2], "name": "edge_indices", "dtype": "int64","ragged": True}],
+                "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
+                                    "edge": {"input_dim": 5, "output_dim": 128}},
+                "attention_args": {"units": 256, "use_multiscale": True, "scale_fusion": "weighted_sum", "attention_scales": [1, 2, 4]},  # Multi-scale attention
+                "depthato": 4,  # Increased depth for multi-scale
+                "depthmol": 4,  # Increased depth for multi-scale
+                "dropout": 0.2,
+                "verbose": 10,
+                "use_graph_state": False,
+                "output_embedding": "graph",
+                "output_mlp": {"use_bias": [True, True, True], "units": [256, 128, 1],
+                               "activation": ["relu", "relu", "linear"]}
+            }
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                              },
+                "loss": "mean_absolute_error"
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}}
+        },
+        "data": {
+            "dataset": {"class_name": "MoleculeNetDataset",
+                        "config": {},
+                        "methods": []
+                        },
+            "data_unit": "unit"
+        },
+        "info": {
+            "postfix": "",
+            "kgcnn_version": "2.0.3"
+        }
+    }
+
+# CoAttentiveFP (Collaborative Attentive Fingerprint) - Collaborative attention between atoms and bonds
+if architecture_name == 'CoAttentiveFP':
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.CoAttentiveFP",
+            "config": {
+                "name": "CoAttentiveFP",
+                "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32","ragged": True},
+                           {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32","ragged": True},
+                           {"shape": [None, 2], "name": "edge_indices", "dtype": "int64","ragged": True}],
+                "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
+                                    "edge": {"input_dim": 5, "output_dim": 128}},
+                "attention_args": {"units": 256, "use_collaborative": True, "collaboration_heads": 8, "dropout_rate": 0.1},
+                "depthato": 4,
+                "depthmol": 4,
+                "dropout": 0.2,
+                "verbose": 10,
+                "use_graph_state": False,
+                "output_embedding": "graph",
+                "output_mlp": {"use_bias": [True, True, True], "units": [256, 128, 1],
+                               "activation": ["relu", "relu", "linear"]}
+            }
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                              },
+                "loss": "mean_absolute_error"
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}}
+        },
+        "data": {
+            "dataset": {"class_name": "MoleculeNetDataset",
+                        "config": {},
+                        "methods": []
+                        },
+            "data_unit": "unit"
+        },
+        "info": {
+            "postfix": "",
+            "kgcnn_version": "2.0.3"
+        }
+    }
+
+# DMPNNAttention (D-MPNN with Attention Readout) - Enhanced DMPNN with attention-based pooling
+if architecture_name == 'DMPNNAttention':
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.DMPNNAttention",
+            "config": {
+                "name": "DMPNNAttention",
+                "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32","ragged": True},
+                           {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32","ragged": True},
+                           {"shape": [None, 2], "name": "edge_indices", "dtype": "int64","ragged": True}],
+                "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
+                                    "edge": {"input_dim": 5, "output_dim": 128}},
+                "edge_initialize": {"units": 256, "use_bias": True, "activation": "relu"},
+                "edge_dense": {"units": 256, "use_bias": True, "activation": "relu"},
+                "edge_activation": {"activation": "relu"},
+                "node_dense": {"units": 256, "use_bias": True, "activation": "relu"},
+                "dropout": {"rate": 0.15},
+                "depth": 6,
+                "attention_units": 128,
+                "attention_heads": 8,
+                "verbose": 10,
+                "use_graph_state": False,
+                "output_embedding": "graph",
+                "pooling_args": {"pooling_method": "attention", "attention_units": 128, "attention_heads": 8},
+                "output_mlp": {"use_bias": [True, True, True], "units": [256, 128, 1],
+                               "activation": ["relu", "relu", "linear"]}
+            }
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                              },
+                "loss": "mean_absolute_error"
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}}
+        },
+        "data": {
+            "dataset": {"class_name": "MoleculeNetDataset",
+                        "config": {},
+                        "methods": []
+                        },
+            "data_unit": "unit"
+        },
+        "info": {
+            "postfix": "",
+            "kgcnn_version": "2.0.3"
+        }
+    }
+
+# EGAT (Edge-Guided Graph Attention) - Enhanced GAT with edge feature guidance
+if architecture_name == 'EGAT':
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.EGAT",
+            "config": {
+                "name": "EGAT",
+                "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32","ragged": True},
+                           {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32","ragged": True},
+                           {"shape": [None, 2], "name": "edge_indices", "dtype": "int64","ragged": True}],
+                "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
+                                    "edge": {"input_dim": 5, "output_dim": 128}},
+                "egat_args": {"units": 128, "use_bias": True, "activation": "relu",
+                              "attention_heads": 8, "attention_units": 64, "use_edge_features": True,
+                              "dropout_rate": 0.1},
+                "depth": 4,
+                "verbose": 10,
+                "use_graph_state": False,
+                "output_embedding": "graph",
+                "output_mlp": {"use_bias": [True, True, True], "units": [256, 128, 1],
+                               "activation": ["relu", "relu", "linear"]}
+            }
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                              },
+                "loss": "mean_absolute_error"
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}}
+        },
+        "data": {
+            "dataset": {"class_name": "MoleculeNetDataset",
+                        "config": {},
+                        "methods": []
+                        },
+            "data_unit": "unit"
+        },
+        "info": {
+            "postfix": "",
+            "kgcnn_version": "2.0.3"
+        }
+    }
+
 if architecture_name == 'GINE':
     hyper = {
         "model": {
