@@ -227,7 +227,8 @@ def splitingTrain_Val(dataset,labels,data_length, inputs=None, hypers=None, idx=
             hypers_dict['model']['config']['last_mlp']['units'][-1] = output_dim
         else:
             hypers_dict['model']['config']['last_mlp']['units'] = output_dim
-    else:
+            
+    if 'output_mlp' in hypers['model']['config'].keys():
         if type(hypers_dict['model']['config']['output_mlp']['units']) == list:
             hypers_dict['model']['config']['output_mlp']['units'][-1] = output_dim
         else:

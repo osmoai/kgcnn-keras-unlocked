@@ -121,8 +121,9 @@ def splitingTrain_Val(dataset,labels,data_length, inputs=None, hypers=None, idx=
     ytest = tf.reshape(ytest, shape=(len(testidx),labels.shape[1]))
     
     print(hypers)
-
-    if embsize:
+    if TRAIN == "False":
+        print("🔒 Inference mode: Skipping input dimension updates to preserve saved model configuration")
+    elif embsize:
         feature_atom_bond_mol = [xi.shape[2] for xi in xtest]
         hypers['model']['config']['inputs'][0]['shape'][1] = feature_atom_bond_mol[0]
         hypers['model']['config']['inputs'][1]['shape'][1] = feature_atom_bond_mol[1]
