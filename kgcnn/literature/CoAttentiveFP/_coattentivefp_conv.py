@@ -4,8 +4,6 @@ from kgcnn.layers.modules import Dense, Dropout
 from kgcnn.layers.attention import AttentionHeadGAT
 from kgcnn.layers.pooling import PoolingNodes
 from kgcnn.layers.update import GRUUpdate
-from kgcnn.layers.gather import GatherNodesIngoing, GatherNodesOutgoing
-from kgcnn.layers.aggr import AggregateLocalEdges
 from kgcnn.ops.axis import get_axis
 from kgcnn.ops.segment import segment_softmax
 
@@ -54,13 +52,15 @@ class CoAttentiveHeadFP(GraphBaseLayer):
                 activation=activation,
                 use_edge_features=True
             )
+            self.edge_attention = AttentionHeadGAT(
+                units=units,
+                use_bias=use_bias,
+                activation=activation,
+                use_edge_features=True
+            )
             self.edge_projection = Dense(units, activation=activation, use_bias=use_bias)
             self.collaboration_gate = Dense(units, activation="sigmoid", use_bias=use_bias)
             self.collaboration_fusion = Dense(units, activation=activation, use_bias=use_bias)
-            
-            # Edge-to-node aggregation layers
-            self.gather_outgoing = GatherNodesOutgoing()
-            self.aggregate_edges = AggregateLocalEdges(pooling_method="sum")
         
         # Standard attention (fallback)
         else:
@@ -87,17 +87,20 @@ class CoAttentiveHeadFP(GraphBaseLayer):
         
         if self.use_collaborative:
             # Collaborative attention mechanism
-            # 1. Node attention with edge features
+            # 1. Node attention
             node_attended = self.node_attention([node_attributes, edge_attributes, edge_indices])
             
-            # 2. Edge projection and aggregation to nodes
+            # 2. Edge attention (using edge features with node context)
+            # First, project edge features to get better representations
             edge_projected = self.edge_projection(edge_attributes)
-            edge_to_node = self._propagate_edge_to_node(edge_projected, edge_indices, node_attributes)
+            edge_attended = self.edge_attention([edge_attributes, edge_projected, edge_indices])
             
             # 3. Collaboration gate
             collaboration_weights = self.collaboration_gate(node_attributes)
             
             # 4. Fuse node and edge attention with collaboration
+            # Propagate edge features to nodes first
+            edge_to_node = self._propagate_edge_to_node(edge_attended, edge_indices, node_attributes)
             collaborative_features = (
                 collaboration_weights * node_attended + 
                 (1 - collaboration_weights) * edge_to_node
@@ -113,19 +116,30 @@ class CoAttentiveHeadFP(GraphBaseLayer):
         # Apply dropout and GRU update
         output = self.dropout(output)
         
-        # GRU update with original node features
-        output = self.gru_update([node_attributes, output])
+        # For GRU update, we need to ensure both inputs have the same dimensions
+        # Since we're using collaborative attention, we should use the node_attended features
+        # which already have the correct dimensions
+        if self.use_collaborative:
+            # Use the node_attended features which have the correct dimensions
+            output = self.gru_update([node_attended, output])
+        else:
+            # For standard attention, use the original node_attributes (should be pre-embedded)
+            output = self.gru_update([node_attributes, output])
         
         return output
     
     def _propagate_edge_to_node(self, edge_features, edge_indices, node_features):
         """Propagate edge features to nodes using edge indices."""
-        # Gather edge features to nodes using edge indices
-        gathered_edges = self.gather_outgoing([edge_features, edge_indices])
+        # Use GatherNodesOutgoing to properly handle ragged tensors
+        from kgcnn.layers.gather import GatherNodesOutgoing
+        from kgcnn.layers.aggr import AggregateLocalEdges
         
-        # Aggregate edge features to nodes
-        # Use the proper aggregation method for ragged tensors
-        node_features_aggregated = self.aggregate_edges([node_features, gathered_edges, edge_indices])
+        # Gather edge features to nodes using edge indices
+        gathered_edges = GatherNodesOutgoing()([edge_features, edge_indices])
+        
+        # Aggregate edge features to nodes using the proper AggregateLocalEdges layer
+        # This requires [nodes, edges, tensor_index] as inputs
+        node_features_aggregated = AggregateLocalEdges(pooling_method="sum")([node_features, gathered_edges, edge_indices])
         
         return node_features_aggregated
 
