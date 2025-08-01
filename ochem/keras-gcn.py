@@ -135,7 +135,8 @@ def splitingTrain_Val(dataset,labels,data_length, inputs=None, hypers=None, idx=
             hypers['model']['config']['last_mlp']['units'][-1] = output_dim
         else:
             hypers['model']['config']['last_mlp']['units'] = output_dim
-    else:
+    
+    if 'output_mlp' in hypers['model']['config'].keys():
         if type(hypers['model']['config']['output_mlp']['units']) == list:
             hypers['model']['config']['output_mlp']['units'][-1] = output_dim
         else:
@@ -1799,10 +1800,10 @@ if architecture_name == 'GIN':
                 "gin_mlp": {"units": [100, 100], "use_bias": True, "activation": ["relu", "relu"],
                             "use_normalization": True, "normalization_technique": "graph_batch"},
                 "gin_args": {},
-                "last_mlp": {"use_bias": [True, True, True], "units": [200, 100, 1],
+                "last_mlp": {"use_bias": [True, True, True], "units": [200, 100, 0],
                              "activation": ["kgcnn>leaky_relu", "selu", "linear"]},
                 "output_embedding": "graph", "output_to_tensor": True,
-                "output_mlp": {"use_bias": True, "units": 1, "activation": "linear"}
+                "output_mlp": {"use_bias": True, "units": 0, "activation": "linear"}
             }
         },
         "training": {
@@ -2100,6 +2101,25 @@ else:
     print("Loaded model from disk")
     hyper = pickle.load(open("modelparameters.p", "rb"))
 
+    # Update output dimensions for inference if needed
+    def update_output_dimensions_inference(config_dict, output_dim):
+        """Update output dimensions in loaded model configuration for inference"""
+        if 'last_mlp' in config_dict:
+            if isinstance(config_dict['last_mlp']['units'], list):
+                config_dict['last_mlp']['units'][-1] = output_dim
+            else:
+                config_dict['last_mlp']['units'] = output_dim
+        if 'output_mlp' in config_dict:
+            if isinstance(config_dict['output_mlp']['units'], list):
+                config_dict['output_mlp']['units'][-1] = output_dim
+            else:
+                config_dict['output_mlp']['units'] = output_dim
+        return config_dict
+
+    # Update the loaded model configuration with current output_dim
+    hyper['model']['config'] = update_output_dimensions_inference(hyper['model']['config'], output_dim)
+    print(f"🔧 Updated model output dimension to {output_dim} for inference")
+
     df = pd.read_csv(APPLY_FILE)
 
     validsmiles = df['smiles'].apply(lambda x: SmilesOK(x))
@@ -2132,8 +2152,10 @@ else:
     model.load_weights(modelname)
 
     x_pred = dataset.tensor(inputs)
+    print(cols)
 
     a_pred = model.predict(x_pred)
+    print(a_pred.shape)
 
     dfres = pd.DataFrame(a_pred, columns=cols)
 
