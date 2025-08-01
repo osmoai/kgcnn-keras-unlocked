@@ -161,10 +161,8 @@ def make_model(name: str = None,
         
         # Graph state fusion if provided (after pooling to graph level)
         if use_graph_state and graph_embedding is not None:
-            # Concatenate or add graph embedding
+            # Concatenate graph embedding with pooled features (same as standard DMPNN)
             out = ks.layers.Concatenate()([out, graph_embedding])
-            # Or use attention to fuse
-            # out = GraphAttention(units=edge_dense["units"])([out, graph_embedding])
     elif output_embedding == "node":
         out = n
     else:
