@@ -235,9 +235,9 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
         
         dataset.set_methods(hyper["data"]["dataset"]["methods"])
 
-    # Generate edge_indices_reverse if needed for DMPNN models
-    if architecture_name in ['DMPNN', 'DMPNNAttention']:
-        print("Generating edge_indices_reverse for DMPNN model...")
+    # Generate edge_indices_reverse if needed for DMPNN and MultiChem models
+    if architecture_name in ['DMPNN', 'DMPNNAttention', 'MultiChem']:
+        print(f"Generating edge_indices_reverse for {architecture_name} model...")
         import numpy as np
         for graph in dataset:
             if 'edge_indices' in graph and 'edge_indices_reverse' not in graph:
