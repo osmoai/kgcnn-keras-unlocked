@@ -7,6 +7,13 @@ from kgcnn.layers.pooling import PoolingNodes, PoolingWeightedNodes
 from kgcnn.model.utils import update_model_kwargs
 from kgcnn.layers.gather import GatherState
 
+# Import the generalized input handling utilities
+from kgcnn.utils.input_utils import (
+    get_input_names, find_input_by_name, create_input_layer,
+    check_descriptor_input, create_descriptor_processing_layer,
+    fuse_descriptors_with_output, build_model_inputs
+)
+
 ks = tf.keras
 
 # Keep track of model version from commit date in literature.
@@ -81,20 +88,40 @@ def make_model(inputs: list = None,
         raise ValueError("No edge features available for GCN, only edge weights of pre-scaled adjacency matrix, \
                          must be shape (batch, None, 1), but got (without batch-dimension): ", inputs[1]['shape'])
 
-    # Make input
-    node_input = ks.layers.Input(**inputs[0])
-    edge_input = ks.layers.Input(**inputs[1])
-    edge_index_input = ks.layers.Input(**inputs[2])
-    graph_descriptors_input = ks.layers.Input(**inputs[3]) if len(inputs) > 3 else None
+    # ROBUST: Use generalized input handling
+    input_names = get_input_names(inputs)
+    print(f"🔍 Input names: {input_names}")
+    
+    # Create input layers using name-based lookup
+    input_layers = {}
+    for i, input_config in enumerate(inputs):
+        name = input_config['name']
+        input_layers[name] = create_input_layer(input_config)
+        print(f"✅ Created input layer: {name} at position {i}")
+    
+    # Extract required inputs
+    node_input = input_layers['node_attributes']
+    edge_input = input_layers['edge_weights']  # GCN uses edge_weights
+    edge_index_input = input_layers['edge_indices']
+    
+    # Check for optional descriptor input
+    descriptor_result = check_descriptor_input(inputs)
+    graph_descriptors_input = None
+    if descriptor_result:
+        idx, config = descriptor_result
+        graph_descriptors_input = input_layers['graph_descriptors']
 
     # Embedding, if no feature dimension
     n = OptionalInputEmbedding(**input_embedding['node'],
                                use_embedding=len(inputs[0]['shape']) < 2)(node_input)
     ed = OptionalInputEmbedding(**input_embedding['edge'],
                                 use_embedding=len(inputs[1]['shape']) < 2)(edge_input)
-    graph_descriptors = OptionalInputEmbedding(
-        **input_embedding["graph"],
-        use_embedding=len(inputs[3]["shape"]) < 1)(graph_descriptors_input) if graph_descriptors_input is not None else None
+    # ROBUST: Use generalized descriptor processing
+    graph_descriptors = create_descriptor_processing_layer(
+        graph_descriptors_input, 
+        input_embedding, 
+        layer_name="graph_descriptor_processing"
+    )
 
     edi = edge_index_input
 
@@ -106,8 +133,8 @@ def make_model(inputs: list = None,
     # Output embedding choice
     if output_embedding == "graph":
         out = PoolingNodes()(n)  # will return tensor
-        if graph_descriptors is not None:
-            out = ks.layers.Concatenate()([graph_descriptors, out])
+        # ROBUST: Use generalized descriptor fusion
+        out = fuse_descriptors_with_output(out, graph_descriptors, fusion_method="concatenate")
         out = MLP(**output_mlp)(out)
     elif output_embedding == "node":
         if graph_descriptors is not None:
@@ -119,11 +146,9 @@ def make_model(inputs: list = None,
     else:
         raise ValueError("Unsupported output embedding for `GCN`")
 
-    if graph_descriptors_input is not None:
-        model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input, graph_descriptors_input],
-            outputs=out, name=name)
-    else:
-        model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input], outputs=out)
+    # ROBUST: Use generalized model input building
+    model_inputs = build_model_inputs(inputs, input_layers)
+    model = ks.models.Model(inputs=model_inputs, outputs=out, name=name)
     model.__kgcnn_model_version__ = __model_version__
     return model
 
@@ -192,12 +217,29 @@ def make_model_weighted(inputs: list = None,
         raise ValueError("No edge features available for GCN, only edge weights of pre-scaled adjacency matrix, \
                          must be shape (batch, None, 1), but got (without batch-dimension): ", inputs[1]['shape'])
 
-    # Make input
-    node_input = ks.layers.Input(**inputs[0])
-    edge_input = ks.layers.Input(**inputs[1])
-    edge_index_input = ks.layers.Input(**inputs[2])
-    node_weights_input = ks.layers.Input(**inputs[3])
-    graph_descriptors_input = ks.layers.Input(**inputs[4]) if len(inputs) > 4 else None
+    # ROBUST: Use generalized input handling
+    input_names = get_input_names(inputs)
+    print(f"🔍 Input names: {input_names}")
+    
+    # Create input layers using name-based lookup
+    input_layers = {}
+    for i, input_config in enumerate(inputs):
+        name = input_config['name']
+        input_layers[name] = create_input_layer(input_config)
+        print(f"✅ Created input layer: {name} at position {i}")
+    
+    # Extract required inputs
+    node_input = input_layers['node_attributes']
+    edge_input = input_layers['edge_attributes']
+    edge_index_input = input_layers['edge_indices']
+    node_weights_input = input_layers['node_weights']
+    
+    # Check for optional descriptor input
+    descriptor_result = check_descriptor_input(inputs)
+    graph_descriptors_input = None
+    if descriptor_result:
+        idx, config = descriptor_result
+        graph_descriptors_input = input_layers['graph_descriptors']
 
     # Embedding, if no feature dimension
     n = OptionalInputEmbedding(**input_embedding['node'],
