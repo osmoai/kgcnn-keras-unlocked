@@ -242,6 +242,9 @@ class GraphTransformerLayer(GraphBaseLayer):
         # Residual connections
         self.residual_add = LazyAdd()
         
+        # Input projection layer to match transformer dimensions
+        self.input_projection = Dense(units=self.units, activation="linear")
+        
         # Projection layer for graph descriptors
         self.graph_projection = Dense(units=self.units, activation="linear")
         
@@ -268,6 +271,9 @@ class GraphTransformerLayer(GraphBaseLayer):
         edge_indices = inputs[2] if len(inputs) > 2 else None
         positional_encoding = inputs[3] if len(inputs) > 3 else None
         graph_descriptors = inputs[4] if len(inputs) > 4 else None
+        
+        # Project input node features to transformer dimension
+        node_features = self.input_projection(node_features)
         
         # Incorporate graph descriptors into node features if provided
         if graph_descriptors is not None:
