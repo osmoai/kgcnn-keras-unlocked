@@ -84,9 +84,6 @@ class AttentiveHeadFPPlus(GraphBaseLayer):
         
         self.dropout = Dropout(dropout_rate)
         
-        # Create simple attention layer
-        self.attention = self._create_local_attention(units)
-        
     def _create_local_attention(self, units):
         """Create local attention layer (1-hop neighbors)."""
         return {
@@ -170,10 +167,40 @@ class AttentiveHeadFPPlus(GraphBaseLayer):
         """
         node_attributes, edge_attributes, edge_indices = inputs
         
-        # Use single attention scale for now (simplified)
-        output = self._apply_attention_scale(
-            self.attention, node_attributes, edge_attributes, edge_indices, 1
-        )
+        if self.use_multiscale:
+            # Apply multi-scale attention
+            scale_outputs = []
+            for i, scale in enumerate(self.attention_scales):
+                scale_output = self._apply_attention_scale(
+                    self.scale_attentions[i], node_attributes, edge_attributes, edge_indices, scale
+                )
+                scale_outputs.append(scale_output)
+            
+            # Fuse different scales
+            if self.scale_fusion == "weighted_sum":
+                # Stack outputs for weighted fusion
+                stacked_outputs = tf.stack(scale_outputs, axis=-1)  # Shape: (batch, nodes, features, scales)
+                
+                # Get fusion weights
+                fusion_weights = self.fusion_weights(node_attributes)  # Shape: (batch, nodes, scales)
+                
+                # Apply weighted sum
+                # Reshape for broadcasting
+                fusion_weights = tf.expand_dims(fusion_weights, axis=-2)  # Shape: (batch, nodes, 1, scales)
+                output = tf.reduce_sum(stacked_outputs * fusion_weights, axis=-1)  # Shape: (batch, nodes, features)
+                
+            elif self.scale_fusion == "concatenate":
+                # Concatenate all scale outputs
+                concatenated = tf.concat(scale_outputs, axis=-1)
+                output = self.fusion_layer(concatenated)
+            else:
+                # Default to simple average
+                output = tf.reduce_mean(scale_outputs, axis=0)
+        else:
+            # Use single attention scale (fallback)
+            output = self._apply_attention_scale(
+                self.attention, node_attributes, edge_attributes, edge_indices, 1
+            )
         
         # Apply dropout
         output = self.dropout(output)
