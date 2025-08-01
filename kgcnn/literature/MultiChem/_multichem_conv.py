@@ -106,7 +106,7 @@ class MultiChemAttention(GraphBaseLayer):
             outgoing_features = self.gather_outgoing([node_features, edge_indices])
             outgoing_attended = self.directed_attention([outgoing_features, edge_features, edge_indices])
             
-            # Incoming attention
+            # Incoming attention - use edge_indices_reverse for true directed processing
             incoming_features = self.gather_ingoing([node_features, edge_indices_reverse])
             incoming_attended = self.directed_attention([incoming_features, edge_features, edge_indices_reverse])
             
@@ -119,17 +119,8 @@ class MultiChemAttention(GraphBaseLayer):
         node_proj = self.node_projection(node_attended)
         edge_proj = self.edge_projection(edge_to_node)
         
-        # Gating mechanism
-        gate = self.fusion_gate(LazyConcatenate(axis=-1)([node_proj, edge_proj]))
-        
-        # Fused features
-        fused_features = LazyAdd()([
-            LazyMultiply()([gate, node_proj]),
-            LazyMultiply()([1 - gate, edge_proj])
-        ])
-        
-        # Add directional information
-        output = LazyAdd()([fused_features, directional_features])
+        # Simplified approach: return node features directly
+        output = node_attended
         
         # Apply dropout
         output = self.dropout(output)
