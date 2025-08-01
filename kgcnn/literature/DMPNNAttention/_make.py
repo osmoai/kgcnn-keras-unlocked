@@ -3,10 +3,11 @@ from kgcnn.layers.casting import ChangeTensorType
 from kgcnn.layers.gather import GatherNodesOutgoing, GatherState
 from kgcnn.layers.modules import Dense, LazyConcatenate, Activation, LazyAdd, Dropout, \
     OptionalInputEmbedding
+from kgcnn.layers.attention import AttentionHeadGAT
 from kgcnn.layers.mlp import GraphMLP, MLP
 from kgcnn.layers.aggr import AggregateLocalEdges
 from ...layers.pooling import PoolingNodes
-from ._dmpnn_attention_conv import DMPNNAttentionPoolingEdges, PoolingNodesDMPNNAttention
+from ._dmpnn_attention_conv import DMPNNAttentionPoolingEdges
 from kgcnn.model.utils import update_model_kwargs
 
 ks = tf.keras
@@ -143,7 +144,20 @@ def make_model(name: str = None,
 
     # Output embedding choice
     if output_embedding == "graph":
-        out = PoolingNodesDMPNNAttention(**pooling_args)(n)
+        # Use attention-based pooling if specified
+        if pooling_args.get("pooling_method") == "attention":
+            # Apply attention pooling directly to node features
+            attention_layer = AttentionHeadGAT(
+                units=pooling_args.get("attention_units", 128),
+                use_bias=True,
+                activation="relu",
+                use_edge_features=False
+            )
+            out = attention_layer([n, edge_input, edge_index_input])
+            # Global pooling after attention
+            out = PoolingNodes(pooling_method="sum")(out)
+        else:
+            out = PoolingNodes(**pooling_args)(n)
         
         # Graph state fusion if provided (after pooling to graph level)
         if use_graph_state and graph_embedding is not None:
