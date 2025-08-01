@@ -158,14 +158,14 @@ def make_model(name: str = None,
     else:
         graph_embedding = None
 
-    # MultiChem layers
+    # MultiChem layers with DUAL processing
     for i in range(depth):
-        # Prepare inputs for MultiChem layer
-        layer_inputs = [n, e, edge_index_input]
+        # Prepare inputs for MultiChem layer (DUAL: atom and bond streams)
+        layer_inputs = [n, e, edge_index_input, edge_index_input]  # Same edge indices for both streams
         if use_directed and edge_index_reverse_input is not None:
             layer_inputs.append(edge_index_reverse_input)
         
-        # Apply MultiChem layer
+        # Apply MultiChem layer (DUAL: processes both atom and bond streams)
         n, e = MultiChemLayer(
             units=units,
             num_heads=num_heads,

@@ -137,14 +137,71 @@ class MultiChemAttention(GraphBaseLayer):
         return output
 
 
-class MultiChemLayer(GraphBaseLayer):
-    """Main MultiChem layer combining attention and message passing.
+class DualGNNBlock(GraphBaseLayer):
+    """Dual GNN block for MultiChem - processes both atom and bond streams in parallel."""
     
-    This layer implements the core MultiChem architecture with support for:
-    - Multi-scale attention
-    - Dual node/edge features
-    - Directed/undirected graphs
-    - Chemical-specific message passing
+    def __init__(self, units, num_heads=8, dropout=0.1, **kwargs):
+        super(DualGNNBlock, self).__init__(**kwargs)
+        self.units = units
+        self.num_heads = num_heads
+        self.dropout = dropout
+        
+        # Atom stream GNN block
+        self.atom_gnn = AttentionHeadGAT(
+            units=units,
+            use_bias=True,
+            activation="relu",
+            use_edge_features=True
+        )
+        
+        # Bond stream GNN block  
+        self.bond_gnn = AttentionHeadGAT(
+            units=units,
+            use_bias=True,
+            activation="relu",
+            use_edge_features=True
+        )
+        
+        # Dropout
+        self.dropout_layer = Dropout(dropout)
+        
+        # Aggregation layers
+        self.gather_outgoing = GatherNodesOutgoing()
+        self.aggregate_edges = AggregateLocalEdges(pooling_method="sum")
+        
+    def call(self, inputs, **kwargs):
+        """Forward pass with dual GNN processing.
+        
+        Args:
+            inputs: [atom_features, bond_features, atom_edge_indices, bond_edge_indices]
+            
+        Returns:
+            Updated atom and bond features
+        """
+        atom_features, bond_features, atom_edge_indices, bond_edge_indices = inputs
+        
+        # Atom stream: process atoms with bond information
+        atom_updated = self.atom_gnn([atom_features, bond_features, atom_edge_indices])
+        atom_updated = self.dropout_layer(atom_updated)
+        
+        # Bond stream: process bonds with atom information
+        # First gather atom features to bond context
+        atom_for_bond = self.gather_outgoing([atom_features, bond_edge_indices])
+        bond_updated = self.bond_gnn([bond_features, atom_for_bond, bond_edge_indices])
+        bond_updated = self.dropout_layer(bond_updated)
+        
+        return atom_updated, bond_updated
+
+
+class MultiChemLayer(GraphBaseLayer):
+    """Main MultiChem layer implementing DUAL architecture.
+    
+    This layer implements the core MultiChem architecture with:
+    - DUAL node features (TWO versions of each)
+    - DUAL edge features (TWO versions of each) 
+    - DUAL message passing (TWO different message passing mechanisms)
+    - DUAL pooling (TWO separate pooling operations)
+    - DUAL outputs (TWO separate predictions)
     """
     
     def __init__(self, units, num_heads=8, use_directed=True, use_dual_features=True,
@@ -169,7 +226,14 @@ class MultiChemLayer(GraphBaseLayer):
         self.attention_dropout = attention_dropout
         self.use_residual = use_residual
         
-        # Multi-scale attention
+        # DUAL GNN blocks for atom and bond streams
+        self.dual_gnn_block = DualGNNBlock(
+            units=units,
+            num_heads=num_heads,
+            dropout=dropout
+        )
+        
+        # Multi-scale attention for merging
         self.attention = MultiChemAttention(
             units=units,
             num_heads=num_heads,
@@ -178,132 +242,63 @@ class MultiChemLayer(GraphBaseLayer):
             attention_dropout=attention_dropout
         )
         
-        # Message passing MLP
-        self.message_mlp = MLP(
-            units=[units, units],
-            activation=["relu", "linear"],
-            use_bias=[True, True],
-            use_normalization=False
-        )
-        
-        # Node update MLP
-        self.node_mlp = MLP(
-            units=[units, units],
-            activation=["relu", "linear"],
-            use_bias=[True, True],
-            use_normalization=False
-        )
-        
-        # Edge update MLP (if using dual features)
-        if self.use_dual_features:
-            self.edge_mlp = MLP(
-                units=[units, units],
-                activation=["relu", "linear"],
-                use_bias=[True, True],
-                use_normalization=False
-            )
-        
-        # Layer normalization
-        self.node_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-        if self.use_dual_features:
-            self.edge_norm = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-        
-        # Dropout
-        self.dropout_layer = Dropout(dropout)
-        
         # Input projection layers for residual connections
-        self.node_input_projection = Dense(units, activation="linear", use_bias=True)
-        if self.use_dual_features:
-            self.edge_input_projection = Dense(units, activation="linear", use_bias=True)
+        self.atom_input_projection = Dense(units, activation="linear", use_bias=True)
+        self.bond_input_projection = Dense(units, activation="linear", use_bias=True)
         
         # Residual connections
         if self.use_residual:
-            self.node_residual = LazyAdd()
-            if self.use_dual_features:
-                self.edge_residual = LazyAdd()
+            self.atom_residual = LazyAdd()
+            self.bond_residual = LazyAdd()
         
         # Aggregation layers
         self.gather_outgoing = GatherNodesOutgoing()
         self.aggregate_edges = AggregateLocalEdges(pooling_method="sum")
         
     def call(self, inputs, **kwargs):
-        """Forward pass of MultiChem layer.
+        """Forward pass of MultiChem layer with DUAL processing.
         
         Args:
-            inputs: [node_features, edge_features, edge_indices, edge_indices_reverse]
-                   or [node_features, edge_features, edge_indices] for undirected
+            inputs: [atom_features, bond_features, atom_edge_indices, bond_edge_indices, atom_edge_indices_reverse]
+                   or [atom_features, bond_features, atom_edge_indices, bond_edge_indices] for undirected
             
         Returns:
-            Updated node and edge features
+            Updated atom and bond features
         """
-        if len(inputs) == 4:
-            node_features, edge_features, edge_indices, edge_indices_reverse = inputs
+        if len(inputs) == 5:
+            atom_features, bond_features, atom_edge_indices, bond_edge_indices, atom_edge_indices_reverse = inputs
         else:
-            node_features, edge_features, edge_indices = inputs
-            edge_indices_reverse = edge_indices
+            atom_features, bond_features, atom_edge_indices, bond_edge_indices = inputs
+            atom_edge_indices_reverse = atom_edge_indices
         
         # Store original features for residual connections (project to correct dimension)
-        node_original = self.node_input_projection(node_features)
-        if self.use_dual_features:
-            edge_original = self.edge_input_projection(edge_features)
-        else:
-            edge_original = edge_features
+        atom_original = self.atom_input_projection(atom_features)
+        bond_original = self.bond_input_projection(bond_features)
         
-        # Multi-scale attention
-        attention_inputs = [node_features, edge_features, edge_indices]
+        # DUAL GNN processing: both atom and bond streams in parallel
+        atom_updated, bond_updated = self.dual_gnn_block([
+            atom_features, bond_features, atom_edge_indices, bond_edge_indices
+        ], **kwargs)
+        
+        # Multi-scale attention for final merging
+        attention_inputs = [atom_updated, bond_updated, atom_edge_indices]
         if self.use_directed:
-            attention_inputs.append(edge_indices_reverse)
+            attention_inputs.append(atom_edge_indices_reverse)
         
-        attended_features = self.attention(attention_inputs, **kwargs)
-        
-        # Message passing
-        # Gather node features to edges
-        node_to_edge = self.gather_outgoing([attended_features, edge_indices])
-        
-        # Combine node and edge features for message computation
-        if self.use_dual_features:
-            message_input = LazyConcatenate(axis=-1)([node_to_edge, edge_features])
-        else:
-            message_input = node_to_edge
-        
-        # Compute messages
-        messages = self.message_mlp(message_input, **kwargs)
-        
-        # Aggregate messages to nodes
-        aggregated_messages = self.aggregate_edges([node_features, messages, edge_indices])
-        
-        # Update node features
-        node_update_input = LazyConcatenate(axis=-1)([node_features, aggregated_messages])
-        node_updated = self.node_mlp(node_update_input, **kwargs)
-        
-        # Update edge features (if using dual features)
-        if self.use_dual_features:
-            edge_update_input = LazyConcatenate(axis=-1)([edge_features, messages])
-            edge_updated = self.edge_mlp(edge_update_input, **kwargs)
-        else:
-            edge_updated = edge_features
-        
-        # Apply normalization
-        node_updated = self.node_norm(node_updated)
-        if self.use_dual_features:
-            edge_updated = self.edge_norm(edge_updated)
-        
-        # Apply dropout
-        node_updated = self.dropout_layer(node_updated)
-        if self.use_dual_features:
-            edge_updated = self.dropout_layer(edge_updated)
+        atom_final = self.attention(attention_inputs, **kwargs)
         
         # Residual connections
         if self.use_residual:
-            node_updated = self.node_residual([node_original, node_updated])
-            if self.use_dual_features:
-                edge_updated = self.edge_residual([edge_original, edge_updated])
+            atom_final = self.atom_residual([atom_original, atom_final])
+            bond_final = self.bond_residual([bond_original, bond_updated])
+        else:
+            bond_final = bond_updated
         
-        return node_updated, edge_updated
+        return atom_final, bond_final
 
 
 class PoolingNodesMultiChem(GraphBaseLayer):
-    """MultiChem-specific pooling layer with support for dual features."""
+    """MultiChem-specific pooling layer with DUAL pooling operations."""
     
     def __init__(self, pooling_method="sum", use_dual_features=True, **kwargs):
         super(PoolingNodesMultiChem, self).__init__(**kwargs)
@@ -311,28 +306,28 @@ class PoolingNodesMultiChem(GraphBaseLayer):
         self.use_dual_features = use_dual_features
         
     def call(self, inputs, **kwargs):
-        """Forward pass with MultiChem pooling.
+        """Forward pass with MultiChem DUAL pooling.
         
         Args:
-            inputs: [node_features, edge_features] or [node_features]
+            inputs: [atom_features, bond_features] or [atom_features]
             
         Returns:
-            Pooled graph features
+            Pooled graph features (DUAL outputs)
         """
         if self.use_dual_features and len(inputs) == 2:
-            node_features, edge_features = inputs
-            # Pool both node and edge features
-            node_pooled = tf.reduce_sum(node_features, axis=1)
-            edge_pooled = tf.reduce_sum(edge_features, axis=1)
-            # Concatenate pooled features
-            return LazyConcatenate(axis=-1)([node_pooled, edge_pooled])
+            atom_features, bond_features = inputs
+            # DUAL pooling: pool both atom and bond features separately
+            atom_pooled = tf.reduce_sum(atom_features, axis=1)
+            bond_pooled = tf.reduce_sum(bond_features, axis=1)
+            # Concatenate dual pooled features
+            return LazyConcatenate(axis=-1)([atom_pooled, bond_pooled])
         else:
-            node_features = inputs[0] if isinstance(inputs, list) else inputs
+            atom_features = inputs[0] if isinstance(inputs, list) else inputs
             if self.pooling_method == "sum":
-                return tf.reduce_sum(node_features, axis=1)
+                return tf.reduce_sum(atom_features, axis=1)
             elif self.pooling_method == "mean":
-                return tf.reduce_mean(node_features, axis=1)
+                return tf.reduce_mean(atom_features, axis=1)
             elif self.pooling_method == "max":
-                return tf.reduce_max(node_features, axis=1)
+                return tf.reduce_max(atom_features, axis=1)
             else:
                 raise ValueError(f"Unsupported pooling method: {self.pooling_method}") 
