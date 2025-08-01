@@ -1041,6 +1041,7 @@ elif architecture_name == 'CoAttentiveFP':
                 "dropout": 0.15,  # Reduced dropout for better collaboration
                 "verbose": 10,
                 "output_embedding": "graph",
+                "use_graph_state": False,  # Default to False, will be set to True if descriptors are used
                 "output_mlp": {"use_bias": [True, True, True], "units": [256, 128, output_dim],
                                "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
             }
@@ -4837,6 +4838,17 @@ if TRAIN == "True":
 
     model.save_weights(modelname)
     print("Saved model to disk")
+    
+    # Save descriptor usage state for consistent inference
+    if use_descriptors and descs:
+        hyperparam["model"]["config"]["_descriptors_used"] = True
+        hyperparam["model"]["config"]["_desc_dim"] = desc_dim
+        print(f"✅ Saved descriptor usage state: descriptors_used=True, desc_dim={desc_dim}")
+    else:
+        hyperparam["model"]["config"]["_descriptors_used"] = False
+        hyperparam["model"]["config"]["_desc_dim"] = 0
+        print("✅ Saved descriptor usage state: descriptors_used=False")
+    
     pickle.dump(hyperparam, open("modelparameters.p", "wb"))
 
     # Probably this should become model.save_weights()
@@ -4862,6 +4874,39 @@ else:
 
     print("Loaded model from disk")
     hyper = pickle.load(open("modelparameters.p", "rb"))
+    
+    # RESTORE descriptor usage state for consistent inference
+    if hasattr(hyper, 'get') and callable(hyper.get) and 'model' in hyper and 'config' in hyper['model']:
+        if '_descriptors_used' in hyper['model']['config']:
+            descriptors_used = hyper['model']['config']['_descriptors_used']
+            saved_desc_dim = hyper['model']['config'].get('_desc_dim', 0)
+            print(f"🔍 Restored descriptor usage state: descriptors_used={descriptors_used}, desc_dim={saved_desc_dim}")
+            
+            # Override current descriptor settings with saved state
+            use_descriptors = descriptors_used
+            desc_dim = saved_desc_dim
+            descs = ['desc%s' % (i) for i in range(desc_dim)] if descriptors_used else []
+            
+            # Ensure use_graph_state matches the saved state
+            if descriptors_used:
+                hyper['model']['config']['use_graph_state'] = True
+                # Ensure descriptor input is present
+                input_names = [inp['name'] for inp in hyper['model']['config']['inputs']]
+                if 'graph_descriptors' not in input_names:
+                    hyper['model']['config']['inputs'].append(
+                        {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+                    )
+                    print(f"✅ Added descriptor input with dimension {desc_dim} for consistent inference")
+            else:
+                hyper['model']['config']['use_graph_state'] = False
+                # Remove descriptor input if present
+                hyper['model']['config']['inputs'] = [inp for inp in hyper['model']['config']['inputs'] 
+                                                     if inp['name'] != 'graph_descriptors']
+                print("✅ Removed descriptor input for consistent inference")
+        else:
+            print("⚠️  No descriptor usage state found in saved model, using current settings")
+    else:
+        print("⚠️  Could not access model config, using current settings")
     
     # SAFETY CHECK: Ensure output_mlp activation is properly formatted
     # Handle both HyperParameter objects and regular dictionaries
@@ -5029,32 +5074,18 @@ else:
     print(f"🔒 use_graph_state: {hyper_dict['model']['config'].get('use_graph_state', 'Not found')}")
     model = make_model(**hyper_dict['model']["config"])
     
-    # Try to load stored best weights, but handle shape mismatches gracefully
+    # Try to load stored best weights - FAIL if there's any mismatch
     try:
         print(f"Attempting to load weights from {modelname}...")
         model.load_weights(modelname)
         print("✅ Successfully loaded model weights")
-    except ValueError as e:
-        if "Shape mismatch" in str(e):
-            print(f"⚠️  Shape mismatch when loading weights: {e}")
-            print("⚠️  This usually means the saved model was trained with different input dimensions")
-            print("⚠️  The model will be used with random weights (not trained)")
-            print("⚠️  Consider retraining the model or using compatible data")
-            
-            # Try to load partial weights (skip incompatible layers)
-            try:
-                print("🔄 Attempting to load partial weights (skipping incompatible layers)...")
-                model.load_weights(modelname, by_name=True, skip_mismatch=True)
-                print("✅ Successfully loaded partial weights")
-            except Exception as partial_e:
-                print(f"⚠️  Could not load partial weights either: {partial_e}")
-                print("⚠️  Model will use random weights")
-        else:
-            print(f"⚠️  Error loading weights: {e}")
-            print("⚠️  The model will be used with random weights")
     except Exception as e:
-        print(f"⚠️  Unexpected error loading weights: {e}")
-        print("⚠️  The model will be used with random weights")
+        print(f"❌ CRITICAL ERROR loading weights: {e}")
+        print("❌ Model architecture mismatch detected!")
+        print("❌ This means the training and inference architectures are different.")
+        print("❌ The model cannot be used with random weights - this would give meaningless results.")
+        print("❌ Please ensure the model architecture is consistent between training and inference.")
+        raise RuntimeError(f"Model architecture mismatch: {e}")
 
     # CRITICAL: Use the exact inputs from the saved model configuration
     print(f"🔒 Using exact inputs from saved model: {[inp['name'] for inp in inputs]}")

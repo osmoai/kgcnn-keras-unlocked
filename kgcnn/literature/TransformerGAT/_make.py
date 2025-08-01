@@ -97,8 +97,15 @@ def make_model(inputs: list = None,
     e = OptionalInputEmbedding(**input_embedding["edge"])(edge_input)
     
     # Graph state embedding if provided
-    if use_graph_state and graph_descriptors_input is not None:
-        graph_embedding = OptionalInputEmbedding(**input_embedding.get("graph", {"input_dim": 100, "output_dim": 64}))(graph_descriptors_input)
+    # FIX: Always create descriptor processing layer when descriptors are present
+    # This ensures consistent architecture between training and inference
+    if graph_descriptors_input is not None:
+        # FIX: Use Dense layer for continuous float descriptors instead of OptionalInputEmbedding
+        # Descriptors are float values, not categorical indices!
+        graph_embedding = Dense(input_embedding.get("graph", {"output_dim": 64})["output_dim"], 
+                               activation='relu', 
+                               use_bias=True,
+                               name="graph_descriptor_processing")(graph_descriptors_input)
     else:
         graph_embedding = None
 
@@ -110,10 +117,12 @@ def make_model(inputs: list = None,
     if output_embedding == "graph":
         out = PoolingNodesTransformerGAT(pooling_method="sum")(n)
         
-        # Graph state fusion if provided (after pooling to graph level)
-        if use_graph_state and graph_embedding is not None:
-            # Concatenate or add graph embedding
-            out = ks.layers.Concatenate()([out, graph_embedding])
+            # Graph state fusion if provided
+    # FIX: Always concatenate when descriptors are present
+    # This ensures consistent architecture between training and inference
+    if graph_embedding is not None:
+        # Concatenate or add graph embedding
+        out = ks.layers.Concatenate()([out, graph_embedding])
     elif output_embedding == "node":
         out = n
     else:

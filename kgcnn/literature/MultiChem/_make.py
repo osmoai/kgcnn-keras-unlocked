@@ -130,7 +130,11 @@ def make_model(name: str = None,
     
     # Graph state embedding if provided
     if use_graph_state and graph_descriptors_input is not None:
-        graph_embedding = OptionalInputEmbedding(**input_embedding.get("graph", {"input_dim": 100, "output_dim": 64}))(graph_descriptors_input)
+        # FIX: Use Dense layer for continuous float descriptors instead of OptionalInputEmbedding
+        # Descriptors are float values, not categorical indices!
+        graph_embedding = Dense(input_embedding.get("graph", {"output_dim": 64})["output_dim"], 
+                               activation='relu', 
+                               use_bias=True)(graph_descriptors_input)
     else:
         graph_embedding = None
 
@@ -160,7 +164,7 @@ def make_model(name: str = None,
         else:
             out = PoolingNodesMultiChem(**pooling_args)(n)
         
-        # Graph state fusion if provided
+        # Graph state fusion if provided (after pooling to graph level)
         if use_graph_state and graph_embedding is not None:
             out = ks.layers.Concatenate()([out, graph_embedding])
             

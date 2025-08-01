@@ -90,8 +90,15 @@ def make_model(inputs: list = None,
     n = OptionalInputEmbedding(**input_embedding["node"])(node_input)
     
     # Graph state embedding if provided
-    if use_graph_state and graph_descriptors_input is not None:
-        graph_embedding = OptionalInputEmbedding(**input_embedding.get("graph", {"input_dim": 100, "output_dim": 64}))(graph_descriptors_input)
+    # FIX: Always create descriptor processing layer when descriptors are present
+    # This ensures consistent architecture between training and inference
+    if graph_descriptors_input is not None:
+        # FIX: Use Dense layer for continuous float descriptors instead of OptionalInputEmbedding
+        # Descriptors are float values, not categorical indices!
+        graph_embedding = Dense(input_embedding.get("graph", {"output_dim": 64})["output_dim"], 
+                               activation='relu', 
+                               use_bias=True,
+                               name="graph_descriptor_processing")(graph_descriptors_input)
     else:
         graph_embedding = None
 
