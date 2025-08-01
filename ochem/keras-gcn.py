@@ -235,6 +235,28 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
         
         dataset.set_methods(hyper["data"]["dataset"]["methods"])
 
+    # Generate edge_indices_reverse if needed for DMPNN models
+    if architecture_name in ['DMPNN', 'DMPNNAttention']:
+        print("Generating edge_indices_reverse for DMPNN model...")
+        import numpy as np
+        for graph in dataset:
+            if 'edge_indices' in graph and 'edge_indices_reverse' not in graph:
+                # Create reverse edge indices
+                edge_indices = np.array(graph['edge_indices'])
+                edge_indices_reverse = []
+                for i, edge in enumerate(edge_indices):
+                    # Find the reverse edge
+                    reverse_edge = np.array([edge[1], edge[0]])
+                    # Find matching reverse edges
+                    matches = np.where((edge_indices == reverse_edge).all(axis=1))[0]
+                    if len(matches) > 0:
+                        reverse_idx = matches[0]
+                        edge_indices_reverse.append(reverse_idx)
+                    else:
+                        # If reverse edge doesn't exist, use the same edge
+                        edge_indices_reverse.append(i)
+                graph['edge_indices_reverse'] = np.array(edge_indices_reverse).reshape(-1, 1)
+
     invalid = dataset.clean(hyper["model"]["config"]["inputs"])
     # I guess clean first and assert clean ok
 
@@ -1958,7 +1980,8 @@ if architecture_name == 'DMPNNAttention':
                 "name": "DMPNNAttention",
                 "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32","ragged": True},
                            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32","ragged": True},
-                           {"shape": [None, 2], "name": "edge_indices", "dtype": "int64","ragged": True}],
+                           {"shape": [None, 2], "name": "edge_indices", "dtype": "int64","ragged": True},
+                           {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64","ragged": True}],
                 "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
                                     "edge": {"input_dim": 5, "output_dim": 128}},
                 "edge_initialize": {"units": 256, "use_bias": True, "activation": "relu"},
