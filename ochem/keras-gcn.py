@@ -2198,6 +2198,128 @@ if architecture_name == 'rGINE':
         }
     }
 
+# MultiChem - Multi-modal Chemical Modeling Framework
+if architecture_name == 'MultiChem':
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.MultiChem",
+            "config": {
+                "name": "MultiChem",
+                "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+                           {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                           {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+                           {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True}],
+                "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
+                                    "edge": {"input_dim": 5, "output_dim": 128},
+                                    "graph": {"input_dim": 100, "output_dim": 64}},
+                "use_directed": True,
+                "use_dual_features": True,
+                "units": 128,
+                "num_heads": 8,
+                "depth": 4,
+                "dropout": 0.1,
+                "attention_dropout": 0.1,
+                "use_residual": True,
+                "pooling_args": {"pooling_method": "sum", "use_dual_features": True},
+                "use_graph_state": False,
+                "output_embedding": "graph",
+                "output_to_tensor": True,
+                "output_mlp": {"use_bias": [True, True, True], "units": [256, 128, 1],
+                               "activation": ["relu", "relu", "linear"]}
+            }
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                              },
+                "loss": "mean_absolute_error"
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}}
+        },
+        "data": {
+            "dataset": {"class_name": "MoleculeNetDataset",
+                        "config": {},
+                        "methods": []
+                        },
+            "data_unit": "unit"
+        },
+        "info": {
+            "postfix": "",
+            "kgcnn_version": "2.0.3"
+        }
+    }
+
+# MultiChem Undirected - Undirected version of MultiChem
+if architecture_name == 'MultiChemUndirected':
+    hyper = {
+        "model": {
+            "class_name": "make_undirected_model",
+            "module_name": "kgcnn.literature.MultiChem",
+            "config": {
+                "name": "MultiChemUndirected",
+                "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+                           {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                           {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}],
+                "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
+                                    "edge": {"input_dim": 5, "output_dim": 128},
+                                    "graph": {"input_dim": 100, "output_dim": 64}},
+                "use_dual_features": True,
+                "units": 128,
+                "num_heads": 8,
+                "depth": 4,
+                "dropout": 0.1,
+                "attention_dropout": 0.1,
+                "use_residual": True,
+                "pooling_args": {"pooling_method": "sum", "use_dual_features": True},
+                "use_graph_state": False,
+                "output_embedding": "graph",
+                "output_to_tensor": True,
+                "output_mlp": {"use_bias": [True, True, True], "units": [256, 128, 1],
+                               "activation": ["relu", "relu", "linear"]}
+            }
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                              },
+                "loss": "mean_absolute_error"
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}}
+        },
+        "data": {
+            "dataset": {"class_name": "MoleculeNetDataset",
+                        "config": {},
+                        "methods": []
+                        },
+            "data_unit": "unit"
+        },
+        "info": {
+            "postfix": "",
+            "kgcnn_version": "2.0.3"
+        }
+    }
+
 # Print to visually make sure we have parsed correctly the parameters
 print("My parameters")
 print("Loss", nn_loss)
