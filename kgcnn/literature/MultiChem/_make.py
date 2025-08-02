@@ -7,6 +7,13 @@ from kgcnn.layers.pooling import PoolingNodes
 from ._multichem_conv import MultiChemLayer, PoolingNodesMultiChem
 from kgcnn.model.utils import update_model_kwargs
 
+# Import the generalized input handling utilities
+from kgcnn.utils.input_utils import (
+    get_input_names, find_input_by_name, create_input_layer,
+    check_descriptor_input, create_descriptor_processing_layer,
+    fuse_descriptors_with_output, build_model_inputs
+)
+
 ks = tf.keras
 
 # Keep track of model version from commit date in literature.
@@ -129,14 +136,17 @@ def make_model(name: str = None,
     e = OptionalInputEmbedding(**input_embedding["edge"])(edge_input)
     
     # Graph state embedding if provided
-    if use_graph_state and graph_descriptors_input is not None:
+    # FIX: Always create descriptor processing if descriptors are present, regardless of use_graph_state
+    if graph_descriptors_input is not None:
         # FIX: Use Dense layer for continuous float descriptors instead of OptionalInputEmbedding
         # Descriptors are float values, not categorical indices!
         graph_embedding = Dense(input_embedding.get("graph", {"output_dim": 64})["output_dim"], 
                                activation='relu', 
                                use_bias=True)(graph_descriptors_input)
+        print(f"✅ MultiChem: Created descriptor processing layer for {graph_descriptors_input.shape}")
     else:
         graph_embedding = None
+        print(f"⚠️  MultiChem: No descriptors provided")
 
     # MultiChem layers with DUAL processing
     for i in range(depth):
@@ -164,17 +174,15 @@ def make_model(name: str = None,
         else:
             out = PoolingNodesMultiChem(**pooling_args)(n)
         
-        # Graph state fusion if provided (after pooling to graph level)
-        if use_graph_state and graph_embedding is not None:
-            out = ks.layers.Concatenate()([out, graph_embedding])
+        # ROBUST: Use generalized descriptor fusion (after pooling, before final MLP)
+        out = fuse_descriptors_with_output(out, graph_embedding, fusion_method="concatenate")
+        out = MLP(**output_mlp)(out)
             
     elif output_embedding == "node":
         out = n
+        out = GraphMLP(**output_mlp)(out)
     else:
         raise ValueError("Unsupported output embedding for mode %s" % output_embedding)
-
-    # Output MLP
-    out = MLP(**output_mlp)(out)
 
     # Output casting
     if output_to_tensor and hasattr(out, 'to_tensor'):
