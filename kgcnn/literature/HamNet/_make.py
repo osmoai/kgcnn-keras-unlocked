@@ -7,6 +7,10 @@ from kgcnn.model.utils import update_model_kwargs
 from kgcnn.layers.modules import LazyConcatenate, OptionalInputEmbedding, Dense, Activation, ZerosLike
 from ...layers.pooling import PoolingNodes, PoolingEmbeddingAttention
 from ._hamnet_conv import HamNaiveDynMessage, HamNetFingerprintGenerator, HamNetGRUUnion, HamNetNaiveUnion
+from kgcnn.utils.input_utils import (
+    get_input_names, find_input_by_name, create_input_layer, check_descriptor_input,
+    create_descriptor_processing_layer, fuse_descriptors_with_output, build_model_inputs
+)
 
 # import tensorflow.keras as ks
 # import tensorflow.python.keras as ks
@@ -30,9 +34,11 @@ model_default = {
     "inputs": [{'shape': (None,), 'name': "node_attributes", 'dtype': 'float32', 'ragged': True},
                {'shape': (None,), 'name': "edge_attributes", 'dtype': 'float32', 'ragged': True},
                {'shape': (None, 2), 'name': "edge_indices", 'dtype': 'int64', 'ragged': True},
-               {'shape': (None, 3), 'name': "node_coordinates", 'dtype': 'float32', 'ragged': True}],
+               {'shape': (None, 3), 'name': "node_coordinates", 'dtype': 'float32', 'ragged': True},
+               {'shape': (2,), 'name': "graph_descriptors", 'dtype': 'float32', 'ragged': False}],
     "input_embedding": {"node": {"input_dim": 95, "output_dim": 64},
-                        "edge": {"input_dim": 5, "output_dim": 64}},
+                        "edge": {"input_dim": 5, "output_dim": 64},
+                        "graph": {"input_dim": 100, "output_dim": 64}},
     "message_kwargs": {"units": 128, "units_edge": 128},
     "fingerprint_kwargs": {"units": 128, "units_attend": 128, "depth": 2},
     "gru_kwargs": {"units": 128},
@@ -41,8 +47,8 @@ model_default = {
     "union_type_edge": "None",
     "given_coordinates": True,
     'output_embedding': 'graph', "output_to_tensor": True,
-    'output_mlp': {"use_bias": [True, True, False], "units": [25, 10, 1],
-                   "activation": ['relu', 'relu', 'linear']}
+    'output_mlp': {"use_bias": [True, True, True], "units": [200, 100, 1],
+                   "activation": ['kgcnn>leaky_relu', 'selu', 'linear']}
 }
 
 
@@ -103,9 +109,29 @@ def make_model(name: str = None,
     Returns:
         :obj:`tf.keras.models.Model`
     """
-    node_input = ks.layers.Input(**inputs[0])
-    edge_input = ks.layers.Input(**inputs[1])
-    edge_index_input = ks.layers.Input(**inputs[2])
+    # ROBUST: Use generalized input handling
+    input_names = get_input_names(inputs)
+    input_layers = {}
+
+    for i, input_config in enumerate(inputs):
+        input_layers[input_config['name']] = create_input_layer(input_config)
+
+    # Get descriptor input if present
+    graph_descriptors_input = None
+    if check_descriptor_input(inputs):
+        graph_descriptors_input = input_layers['graph_descriptors']
+
+    # ROBUST: Use generalized descriptor processing
+    graph_embedding = create_descriptor_processing_layer(
+        graph_descriptors_input,
+        input_embedding,
+        layer_name="graph_descriptor_processing"
+    )
+
+    # Get main inputs
+    node_input = input_layers['node_attributes']
+    edge_input = input_layers['edge_attributes']
+    edge_index_input = input_layers['edge_indices']
 
     # Make input embedding if no feature dimension. (batch, None) -> (batch, None, F)
     n = OptionalInputEmbedding(**input_embedding['node'],
@@ -117,7 +143,7 @@ def make_model(name: str = None,
     # Generate coordinates.
     if given_coordinates:
         # Case for given coordinates.
-        q_ftr = ks.layers.Input(**inputs[3])
+        q_ftr = input_layers['node_coordinates']
         p_ftr = ZerosLike()(q_ftr)
     else:
         # Use Hamiltonian engine to get p, q coordinates.
@@ -154,6 +180,9 @@ def make_model(name: str = None,
     if output_embedding == 'graph':
         out = HamNetFingerprintGenerator(**fingerprint_kwargs)(n)
         out = ks.layers.Flatten()(out)  # will be tensor.
+        # ROBUST: Use generalized descriptor fusion
+        if graph_embedding is not None:
+            out = fuse_descriptors_with_output(out, graph_embedding, fusion_method="concatenate")
         out = MLP(**output_mlp)(out)
     elif output_embedding == 'node':
         out = GraphMLP(**output_mlp)(n)
@@ -162,11 +191,9 @@ def make_model(name: str = None,
     else:
         raise ValueError("Unsupported output embedding for `HamNet`")
 
-    # Make Model instance.
-    if given_coordinates:
-        model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input, q_ftr], outputs=out)
-    else:
-        model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input], outputs=out)
+    # ROBUST: Use generalized model input building
+    model_inputs = build_model_inputs(inputs, input_layers)
+    model = ks.models.Model(inputs=model_inputs, outputs=out)
 
     model.__kgcnn_model_version__ = __model_version__
     return model

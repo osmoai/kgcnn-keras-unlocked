@@ -8,6 +8,10 @@ from ...layers.pooling import PoolingNodes
 from kgcnn.model.utils import update_model_kwargs
 from kgcnn.layers.gather import GatherState
 from kgcnn.layers.modules import LazyConcatenate
+from kgcnn.utils.input_utils import (
+    get_input_names, find_input_by_name, create_input_layer, check_descriptor_input,
+    create_descriptor_processing_layer, fuse_descriptors_with_output, build_model_inputs
+)
 
 ks = tf.keras
 
@@ -27,8 +31,9 @@ model_default = {
     "name": "Schnet",
     "inputs": [{"shape": (None,), "name": "node_attributes", "dtype": "float32", "ragged": True},
                {"shape": (None, 3), "name": "node_coordinates", "dtype": "float32", "ragged": True},
-               {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True}],
-    "input_embedding": {"node": {"input_dim": 95, "output_dim": 64}},
+               {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
+               {"shape": (2,), "name": "graph_descriptors", "dtype": "float32", "ragged": False}],
+    "input_embedding": {"node": {"input_dim": 95, "output_dim": 64}, "graph": {"input_dim": 100, "output_dim": 64}},
     "make_distance": True, "expand_distance": True,
     "interaction_args": {"units": 128, "use_bias": True,
                          "activation": "kgcnn>shifted_softplus", "cfconv_pool": "sum"},
@@ -105,21 +110,34 @@ def make_model(inputs: list = None,
     Returns:
         :obj:`tf.keras.models.Model`
     """
-    # Make input
-    node_input = ks.layers.Input(**inputs[0])
-    xyz_input = ks.layers.Input(**inputs[1])
-    edge_index_input = ks.layers.Input(**inputs[2])
-    graph_state_input = ks.layers.Input(**inputs[3])
+    # ROBUST: Use generalized input handling
+    input_names = get_input_names(inputs)
+    input_layers = {}
+
+    for i, input_config in enumerate(inputs):
+        input_layers[input_config['name']] = create_input_layer(input_config)
+
+    # Get descriptor input if present
+    graph_descriptors_input = None
+    if check_descriptor_input(inputs):
+        graph_descriptors_input = input_layers['graph_descriptors']
+
+    # ROBUST: Use generalized descriptor processing
+    graph_embedding = create_descriptor_processing_layer(
+        graph_descriptors_input,
+        input_embedding,
+        layer_name="graph_descriptor_processing"
+    )
+
+    # Get main inputs
+    node_input = input_layers['node_attributes']
+    xyz_input = input_layers['node_coordinates']
+    edge_index_input = input_layers['edge_indices']
 
     # embedding, if no feature dimension
     n = OptionalInputEmbedding(**input_embedding['node'],
                                use_embedding=len(inputs[0]['shape']) < 2)(node_input)
     edi = edge_index_input
-
-    if use_graph_state:
-        graph_state = OptionalInputEmbedding(
-            **input_embedding["graph"],
-            use_embedding=len(inputs[3]["shape"]) < 1)(graph_state_input) if use_graph_state else None
 
     if make_distance:
         x = xyz_input
@@ -142,14 +160,12 @@ def make_model(inputs: list = None,
     if output_embedding == 'graph':
         out = PoolingNodes(**node_pooling_args)(n)
         if use_output_mlp:
-            if use_graph_state:
-                out = ks.layers.Concatenate()([graph_state, out])
+            # ROBUST: Use generalized descriptor fusion
+            if graph_embedding is not None:
+                out = fuse_descriptors_with_output(out, graph_embedding, fusion_method="concatenate")
             out = MLP(**output_mlp)(out)
     elif output_embedding == 'node':
         out = n
-        if use_graph_state:
-            graph_state_node = GatherState()([graph_state, n])
-            out = LazyConcatenate()([n, graph_state_node])
         if use_output_mlp:
             out = GraphMLP(**output_mlp)(out)
         if output_to_tensor:  # For tf version < 2.8 cast to tensor below.
@@ -157,12 +173,9 @@ def make_model(inputs: list = None,
     else:
         raise ValueError("Unsupported output embedding for mode `SchNet`")
 
-
-    if use_graph_state:
-        model = ks.models.Model(inputs=[node_input, xyz_input, edge_index_input, graph_state_input], outputs=out)
-    else:
-  
-        model = ks.models.Model(inputs=[node_input, xyz_input, edge_index_input], outputs=out)
+    # ROBUST: Use generalized model input building
+    model_inputs = build_model_inputs(inputs, input_layers)
+    model = ks.models.Model(inputs=model_inputs, outputs=out)
 
     model.__kgcnn_model_version__ = __model_version__
     return model
