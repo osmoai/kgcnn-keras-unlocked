@@ -7,6 +7,7 @@ from kgcnn.layers.mlp import GraphMLP, MLP
 from kgcnn.layers.aggr import PoolingLocalMessages, AggregateLocalEdgesLSTM
 from kgcnn.layers.pooling import PoolingNodes
 from kgcnn.model.utils import update_model_kwargs
+from kgcnn.utils.input_utils import get_input_names, create_input_layer, check_descriptor_input, create_descriptor_processing_layer, fuse_descriptors_with_output, build_model_inputs
 
 ks = tf.keras
 
@@ -24,7 +25,8 @@ model_default = {
     'name': "GraphSAGE",
     'inputs': [{'shape': (None,), 'name': "node_attributes", 'dtype': 'float32', 'ragged': True},
                {'shape': (None,), 'name': "edge_attributes", 'dtype': 'float32', 'ragged': True},
-               {'shape': (None, 2), 'name': "edge_indices", 'dtype': 'int64', 'ragged': True}],
+               {'shape': (None, 2), 'name': "edge_indices", 'dtype': 'int64', 'ragged': True},
+               {'shape': (None, 2), 'name': "graph_descriptors", 'dtype': 'float32', 'ragged': False}],
     'input_embedding': {"node": {"input_dim": 95, "output_dim": 64},
                         "edge": {"input_dim": 5, "output_dim": 64}},
     'node_mlp_args': {"units": [100, 50], "use_bias": True, "activation": ['relu', "linear"]},
@@ -93,9 +95,29 @@ def make_model(inputs: list = None,
     Returns:
         :obj:`tf.keras.models.Model`
     """
-    node_input = ks.layers.Input(**inputs[0])
-    edge_input = ks.layers.Input(**inputs[1])
-    edge_index_input = ks.layers.Input(**inputs[2])
+    # ROBUST: Use generalized input handling
+    input_names = get_input_names(inputs)
+    input_layers = {}
+    
+    for i, input_config in enumerate(inputs):
+        input_layers[input_config['name']] = create_input_layer(input_config)
+    
+    # Get descriptor input if present
+    graph_descriptors_input = None
+    if check_descriptor_input(inputs):
+        graph_descriptors_input = input_layers['graph_descriptors']
+    
+    # ROBUST: Use generalized descriptor processing
+    graph_embedding = create_descriptor_processing_layer(
+        graph_descriptors_input,
+        input_embedding,
+        layer_name="graph_descriptor_processing"
+    )
+    
+    # Get main inputs
+    node_input = input_layers['node_attributes']
+    edge_input = input_layers['edge_attributes']
+    edge_index_input = input_layers['edge_indices']
 
     # Make input embedding, if no feature dimension
     n = OptionalInputEmbedding(**input_embedding['node'],
@@ -126,6 +148,10 @@ def make_model(inputs: list = None,
     if output_embedding == 'graph':
         out = PoolingNodes(**pooling_nodes_args)(n)
         out = ks.layers.Flatten()(out)  # will be tensor
+        
+        # ROBUST: Use generalized descriptor fusion
+        out = fuse_descriptors_with_output(out, graph_embedding, fusion_method="concatenate")
+        
         out = MLP(**output_mlp)(out)
     elif output_embedding == 'node':
         out = GraphMLP(**output_mlp)(n)
@@ -134,6 +160,8 @@ def make_model(inputs: list = None,
     else:
         raise ValueError("Unsupported output embedding for `GraphSAGE`")
 
-    model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input], outputs=out)
+    # ROBUST: Use generalized model input building
+    model_inputs = build_model_inputs(inputs, input_layers)
+    model = ks.models.Model(inputs=model_inputs, outputs=out)
     model.__kgcnn_model_version__ = __model_version__
     return model

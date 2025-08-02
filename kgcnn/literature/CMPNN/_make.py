@@ -300,11 +300,13 @@ def make_cmpnn_pna_model(inputs, use_edge_features=True, use_graph_state=False,
     else:
         raise ValueError(f"Unsupported output embedding: {output_embedding}")
     
-    # Graph state fusion (if using graph descriptors)
-    if use_graph_state:
-        # This would be implemented based on the specific model architecture
-        # For now, we'll skip this to avoid shape issues
-        pass
+    # ROBUST: Use generalized descriptor fusion
+    graph_embedding = create_descriptor_processing_layer(
+        graph_descriptors_input, 
+        input_embedding, 
+        layer_name="graph_descriptor_processing"
+    )
+    out = fuse_descriptors_with_output(out, graph_embedding, fusion_method="concatenate")
     
     # Output MLP
     out = MLP(**output_mlp)(out)

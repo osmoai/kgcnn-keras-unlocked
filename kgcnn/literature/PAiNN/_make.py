@@ -12,6 +12,13 @@ from kgcnn.model.utils import update_model_kwargs
 from kgcnn.layers.gather import GatherState
 from kgcnn.layers.modules import LazyConcatenate
 
+# Import the generalized input handling utilities
+from kgcnn.utils.input_utils import (
+    get_input_names, find_input_by_name, create_input_layer,
+    check_descriptor_input, create_descriptor_processing_layer,
+    fuse_descriptors_with_output, build_model_inputs
+)
+
 ks = tf.keras
 
 # Keep track of model version from commit date in literature.
@@ -28,7 +35,8 @@ model_default = {
     "inputs": [
         {"shape": (None,), "name": "node_attributes", "dtype": "float32", "ragged": True},
         {"shape": (None, 3), "name": "node_coordinates", "dtype": "float32", "ragged": True},
-        {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True}
+        {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
+        {"shape": (None, 2), "name": "graph_descriptors", "dtype": "float32", "ragged": False}
     ],
     "input_embedding": {"node": {"input_dim": 95, "output_dim": 128}},
     "equiv_initialize_kwargs": {"dim": 3, "method": "zeros"},
@@ -102,35 +110,65 @@ def make_model(inputs: list = None,
     Returns:
         :obj:`tf.keras.models.Model`
     """
-    # Make input
-    node_input = ks.layers.Input(**inputs[0])
-    xyz_input = ks.layers.Input(**inputs[1])
-    bond_index_input = ks.layers.Input(**inputs[2])
-    z = OptionalInputEmbedding(**input_embedding['node'],
-                               use_embedding=len(inputs[0]['shape']) < 2)(node_input)
+    # ROBUST: Use generalized input handling
+    input_names = get_input_names(inputs)
+    print(f"🔍 Input names: {input_names}")
+    
+    # Create input layers using name-based lookup
+    input_layers = {}
+    for i, input_config in enumerate(inputs):
+        name = input_config['name']
+        input_layers[name] = create_input_layer(input_config)
+        print(f"✅ Created input layer: {name} at position {i}")
+    
+    # Extract required inputs
+    node_input = input_layers['node_attributes']
+    xyz_input = input_layers['node_coordinates']
+    bond_index_input = input_layers['edge_indices']
+    
+    # Check for optional descriptor input
+    descriptor_result = check_descriptor_input(inputs)
+    graph_descriptors_input = None
+    if descriptor_result:
+        idx, config = descriptor_result
+        graph_descriptors_input = input_layers['graph_descriptors']
 
-    # Initialize equiv_input and graph_state
+    # For PAiNN, we always need to embed node features since they are continuous
+    # Use Dense layer instead of OptionalInputEmbedding for continuous features
+    print(f"🔍 PAiNN: Using Dense layer for node embedding from {inputs[0]['shape']} to {input_embedding['node']['output_dim']}")
+    z = ks.layers.Dense(
+        units=input_embedding['node']['output_dim'],
+        activation='linear',
+        use_bias=True,
+        kernel_initializer='glorot_uniform',
+        bias_initializer='zeros'
+    )(node_input)
+
+    # ROBUST: Use generalized descriptor processing
+    graph_embedding = create_descriptor_processing_layer(
+        graph_descriptors_input, 
+        input_embedding, 
+        layer_name="graph_descriptor_processing"
+    )
+
+    # Initialize equiv_input and graph_state using unified system
     equiv_input = None
     graph_state = None
 
-    if use_equiv_input and len(inputs)==4:
-        equiv_input = ks.layers.Input(**inputs[3])
+    # Get additional inputs from input_layers if available
+    if use_equiv_input:
+        equiv_input = input_layers.get('equiv_input', None)
 
-    elif use_graph_state and len(inputs)==4:
-        graph_state_input = ks.layers.Input(**inputs[3])
-        graph_state = OptionalInputEmbedding(
-            **input_embedding["graph"],
-            use_embedding=len(inputs[3]["shape"]) < 1)(graph_state_input) if use_graph_state else None
-
-    elif use_equiv_input and use_graph_state and len(inputs)==5:
-        equiv_input = ks.layers.Input(**inputs[3])
-        graph_state_input = ks.layers.Input(**inputs[4])
-        graph_state = OptionalInputEmbedding(
-            **input_embedding["graph"],
-            use_embedding=len(inputs[4]["shape"]) < 1)(graph_state_input) if use_graph_state else None
+    if use_graph_state:
+        graph_state_input = input_layers.get('graph_state', None)
+        if graph_state_input is not None:
+            graph_state = OptionalInputEmbedding(
+                **input_embedding["graph"],
+                use_embedding=len(inputs[3]["shape"]) < 1)(graph_state_input) if use_graph_state else None
 
     # If equiv_input is not provided, initialize it
     if equiv_input is None:
+        # Initialize equivariant features from embedded node features, not raw attributes
         equiv_input = EquivariantInitialize(**equiv_initialize_kwargs)(z)
 
     edi = bond_index_input
@@ -162,11 +200,17 @@ def make_model(inputs: list = None,
     # Output embedding choice
     if output_embedding == "graph":
         out = PoolingNodes(**pooling_args)(n)
-        if use_graph_state:
+        
+        # ROBUST: Use generalized descriptor fusion
+        out = fuse_descriptors_with_output(out, graph_embedding, fusion_method="concatenate")
+        
+        # Legacy graph state handling (for backward compatibility)
+        if use_graph_state and graph_state is not None:
             out = ks.layers.Concatenate()([graph_state, out])
+            
         out = MLP(**output_mlp)(out)
     elif output_embedding == "node":
-        if use_graph_state:
+        if use_graph_state and graph_state is not None:
             graph_state_node = GatherState()([graph_state, n])
             n = LazyConcatenate()([n, graph_state_node])
         out = GraphMLP(**output_mlp)(n)
@@ -175,14 +219,9 @@ def make_model(inputs: list = None,
     else:
         raise ValueError("Unsupported output embedding for mode `PAiNN`")
 
-    if use_equiv_input and len(inputs)==4:
-        model = ks.models.Model(inputs=[node_input, xyz_input, bond_index_input, equiv_input], outputs=out)
-    elif use_graph_state and len(inputs)==4:
-        model = ks.models.Model(inputs=[node_input, xyz_input, bond_index_input, graph_state_input], outputs=out)
-    elif use_equiv_input and use_graph_state and len(inputs)==5:
-        model = ks.models.Model(inputs=[node_input, xyz_input, bond_index_input, equiv_input, graph_state_input], outputs=out)
-    else:
-        raise ValueError("Unsupported input for mode `PAiNN`")
+    # ROBUST: Use generalized model input building
+    model_inputs = build_model_inputs(inputs, input_layers)
+    model = ks.models.Model(inputs=model_inputs, outputs=out, name=name)
 
     model.__kgcnn_model_version__ = __model_version__
     return model

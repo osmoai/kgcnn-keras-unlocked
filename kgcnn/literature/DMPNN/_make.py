@@ -9,6 +9,13 @@ from ...layers.pooling import PoolingNodes
 from ._dmpnn_conv import DMPNNPPoolingEdgesDirected
 from kgcnn.model.utils import update_model_kwargs
 
+# Import the generalized input handling utilities
+from kgcnn.utils.input_utils import (
+    get_input_names, find_input_by_name, create_input_layer,
+    check_descriptor_input, create_descriptor_processing_layer,
+    fuse_descriptors_with_output, build_model_inputs
+)
+
 ks = tf.keras
 
 # Keep track of model version from commit date in literature.
@@ -153,8 +160,8 @@ def make_model(name: str = None,
     n = hv
     if output_embedding == 'graph':
         out = PoolingNodes(**pooling_args)(n)
-        if use_graph_state:
-            out = ks.layers.Concatenate()([graph_state, out])
+        # ROBUST: Use generalized descriptor fusion
+        out = fuse_descriptors_with_output(out, graph_state, fusion_method="concatenate")
         out = MLP(**output_mlp)(out)
     elif output_embedding == 'node':
         if use_graph_state:

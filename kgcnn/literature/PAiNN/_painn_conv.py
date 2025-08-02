@@ -261,35 +261,35 @@ class EquivariantInitialize(GraphBaseLayer):
             tf.RaggedTensor: Equivariant tensor of shape (batch, [N], dim, F)
         """
         inputs = self.assert_ragged_input_rank(inputs)
+        # Get the feature dimension (last dimension)
+        feature_dim = inputs.values.shape[-1]
+        
         if self.method == "zeros":
-            out = tf.zeros_like(inputs.values)
-            out = tf.expand_dims(out, axis=1)
-            out = tf.repeat(out, self.dim, axis=1)
+            # Create zeros with shape (batch, dim, feature_dim)
+            out = tf.zeros([tf.shape(inputs.values)[0], self.dim, feature_dim], dtype=inputs.values.dtype)
         elif self.method == "eps":
-            out = tf.zeros_like(inputs.values) + ks.backend.epsilon()
-            out = tf.expand_dims(out, axis=1)
-            out = tf.repeat(out, self.dim, axis=1)
+            # Create epsilon with shape (batch, dim, feature_dim)
+            out = tf.zeros([tf.shape(inputs.values)[0], self.dim, feature_dim], dtype=inputs.values.dtype) + ks.backend.epsilon()
         elif self.method == "ones":
-            out = tf.ones_like(inputs.values)
-            out = tf.expand_dims(out, axis=1)
-            out = tf.repeat(out, self.dim, axis=1)
+            # Create ones with shape (batch, dim, feature_dim)
+            out = tf.ones([tf.shape(inputs.values)[0], self.dim, feature_dim], dtype=inputs.values.dtype)
         elif self.method == "eye":
-            values = inputs.values
-            out = tf.eye(self.dim, num_columns=values.shape[1], batch_shape=tf.shape(values)[:1], dtype=values.dtype)
+            # Create identity matrix with shape (batch, dim, feature_dim)
+            out = tf.eye(self.dim, num_columns=feature_dim, batch_shape=tf.shape(inputs.values)[:1], dtype=inputs.values.dtype)
         elif self.method == "normal":
-            values = inputs.values
-            out = tf.expand_dims(tf.random.normal([self.dim, values.shape[1]], stddev=self.stddev), axis=0)
-            out = tf.repeat(out, tf.shape(values)[0], axis=0)
+            # Create normal distribution with shape (batch, dim, feature_dim)
+            out = tf.random.normal([tf.shape(inputs.values)[0], self.dim, feature_dim], stddev=self.stddev, dtype=inputs.values.dtype)
         elif self.method == "const":
-            out = tf.ones_like(inputs.values)*self.value
-            out = tf.expand_dims(out, axis=1)
-            out = tf.repeat(out, self.dim, axis=1)
+            # Create constant with shape (batch, dim, feature_dim)
+            out = tf.ones([tf.shape(inputs.values)[0], self.dim, feature_dim], dtype=inputs.values.dtype) * self.value
         elif self.method == "node":
+            # Use node features with shape (batch, dim, feature_dim)
             out = tf.expand_dims(inputs.values, axis=1)
             out = tf.repeat(out, self.dim, axis=1)
         else:
             raise ValueError("Unknown initialization method %s" % self.method)
-        # Static shape expansion for dim, tf.repeat would be possible too.
+        
+        # Create ragged tensor with shape (batch, [N], dim, feature_dim)
         out = tf.RaggedTensor.from_row_splits(out, inputs.row_splits)
         return out
 

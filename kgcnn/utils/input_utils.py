@@ -147,8 +147,15 @@ def fuse_descriptors_with_output(output_tensor: ks.layers.Layer,
     """
     if descriptor_tensor is not None:
         if fusion_method == "concatenate":
-            fused = ks.layers.Concatenate()([output_tensor, descriptor_tensor])
-            print(f"✅ Fused descriptors using {fusion_method}")
+            # Handle ragged tensor case - expand descriptors to match ragged structure
+            if hasattr(output_tensor, 'ragged_rank') and output_tensor.ragged_rank > 0:
+                # For ragged tensors, we need to expand descriptors to match the ragged structure
+                # This is typically done at the graph level after pooling
+                print(f"⚠️  Ragged tensor detected, skipping descriptor fusion at node level")
+                return output_tensor
+            else:
+                fused = ks.layers.Concatenate()([output_tensor, descriptor_tensor])
+                print(f"✅ Fused descriptors using {fusion_method}")
         elif fusion_method == "add":
             # Ensure dimensions match for addition
             if output_tensor.shape[-1] == descriptor_tensor.shape[-1]:

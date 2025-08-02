@@ -91,6 +91,9 @@ class CMPNNPlusPoolingEdges(GraphBaseLayer):
         # Initialize edge features
         edge_features = self.edge_initialize_layer(edge_attributes)
         
+        # Initialize node features to match expected shape
+        node_attributes = self.node_dense_layer(node_attributes)
+        
         # Multi-level communicative message passing
         if self.use_communicative:
             for level in range(self.communication_levels):
@@ -111,8 +114,19 @@ class CMPNNPlusPoolingEdges(GraphBaseLayer):
                     communication_weights = self.communication_layers[level]['communication_gate'](edge_features)
                     edge_features_updated = communication_weights * edge_features_updated
                     
-                    # Aggregate edge features to nodes
-                    node_features_updated = self.aggregate_edges([edge_features_updated, edge_indices_reverse])
+                    # Aggregate edge features to nodes - filter out invalid reverse indices
+                    valid_mask = tf.squeeze(edge_indices_reverse >= 0, axis=-1)
+                    # Use ragged tensor operations for ragged tensors
+                    valid_edge_features = tf.ragged.boolean_mask(edge_features_updated, valid_mask)
+                    valid_reverse_indices = tf.ragged.boolean_mask(edge_indices_reverse, valid_mask)
+                    
+                    # Check if we have any valid edges using tf.cond for graph execution
+                    has_valid_edges = tf.greater(tf.shape(valid_edge_features)[0], 0)
+                    node_features_updated = tf.cond(
+                        has_valid_edges,
+                        lambda: self.aggregate_edges([node_attributes, valid_edge_features, valid_reverse_indices]),
+                        lambda: node_attributes
+                    )
                     
                     # Apply node MLP
                     node_features_updated = self.communication_layers[level]['node_mlp'](node_features_updated)
@@ -155,8 +169,19 @@ class CMPNNPlusPoolingEdges(GraphBaseLayer):
                 # Apply edge activation
                 edge_features = self.edge_activation_layer(edge_features)
                 
-                # Aggregate edge features to nodes
-                node_features_updated = self.aggregate_edges([edge_features, edge_indices_reverse])
+                # Aggregate edge features to nodes - filter out invalid reverse indices
+                valid_mask = tf.squeeze(edge_indices_reverse >= 0, axis=-1)
+                # Use ragged tensor operations for ragged tensors
+                valid_edge_features = tf.ragged.boolean_mask(edge_features, valid_mask)
+                valid_reverse_indices = tf.ragged.boolean_mask(edge_indices_reverse, valid_mask)
+                
+                # Check if we have any valid edges using tf.cond for graph execution
+                has_valid_edges = tf.greater(tf.shape(valid_edge_features)[0], 0)
+                node_features_updated = tf.cond(
+                    has_valid_edges,
+                    lambda: self.aggregate_edges([node_attributes, valid_edge_features, valid_reverse_indices]),
+                    lambda: node_attributes
+                )
                 
                 # Apply node MLP
                 node_features_updated = self.node_dense_layer(node_features_updated)

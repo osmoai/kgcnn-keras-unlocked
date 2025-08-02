@@ -6,6 +6,7 @@ from kgcnn.layers.modules import Dense, LazyConcatenate, LazyAdd, LazySubtract
 from ...layers.pooling import PoolingNodes
 from kgcnn.model.utils import update_model_kwargs
 from kgcnn.layers.mlp import MLP
+from kgcnn.utils.input_utils import get_input_names, create_input_layer, check_descriptor_input, create_descriptor_processing_layer, fuse_descriptors_with_output, build_model_inputs
 
 ks = tf.keras
 
@@ -24,7 +25,8 @@ model_default = {
     "inputs": [{"shape": [None], "name": "node_attributes", "dtype": "float32", "ragged": True},
                {"shape": [None, 3], "name": "node_coordinates", "dtype": "float32", "ragged": True},
                {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-               {"shape": [None, 2], "name": "angle_indices", "dtype": "int64", "ragged": True}],
+               {"shape": [None, 2], "name": "angle_indices", "dtype": "int64", "ragged": True},
+               {"shape": [None, 2], "name": "graph_descriptors", "dtype": "float32", "ragged": False}],
     "input_embedding": {"node": {"input_dim": 95, "output_dim": 128,
                                  "embeddings_initializer": {"class_name": "RandomUniform",
                                                             "config": {"minval": -1.7320508075688772,
@@ -118,11 +120,30 @@ def make_model(inputs: list = None,
     Returns:
         :obj:`tf.keras.models.Model`
     """
-    # Make input
-    node_input = ks.layers.Input(**inputs[0])
-    xyz_input = ks.layers.Input(**inputs[1])
-    bond_index_input = ks.layers.Input(**inputs[2])
-    angle_index_input = ks.layers.Input(**inputs[3])
+    # ROBUST: Use generalized input handling
+    input_names = get_input_names(inputs)
+    input_layers = {}
+    
+    for i, input_config in enumerate(inputs):
+        input_layers[input_config['name']] = create_input_layer(input_config, i)
+    
+    # Get descriptor input if present
+    graph_descriptors_input = None
+    if check_descriptor_input(input_names):
+        graph_descriptors_input = input_layers['graph_descriptors']
+    
+    # ROBUST: Use generalized descriptor processing
+    graph_embedding = create_descriptor_processing_layer(
+        graph_descriptors_input,
+        input_embedding,
+        layer_name="graph_descriptor_processing"
+    )
+    
+    # Get main inputs
+    node_input = input_layers['node_attributes']
+    xyz_input = input_layers['node_coordinates']
+    bond_index_input = input_layers['edge_indices']
+    angle_index_input = input_layers['angle_indices']
 
     # Atom embedding
     # n = generate_node_embedding(node_input, input_node_shape, input_embedding["nodes"])
@@ -168,6 +189,9 @@ def make_model(inputs: list = None,
         out = PoolingNodes(pooling_method="sum")(ps)
     else:
         out = PoolingNodes(pooling_method="mean")(ps)
+    
+    # ROBUST: Use generalized descriptor fusion
+    out = fuse_descriptors_with_output(out, graph_embedding, fusion_method="concatenate")
 
     if use_output_mlp:
         out = MLP(**output_mlp)(out)
@@ -175,8 +199,9 @@ def make_model(inputs: list = None,
     if output_embedding != "graph":
         raise ValueError("Unsupported output embedding for mode `DimeNetPP`.")
 
-    model = ks.models.Model(inputs=[node_input, xyz_input, bond_index_input, angle_index_input],
-                            outputs=out)
+    # ROBUST: Use generalized model input building
+    model_inputs = build_model_inputs(inputs, input_layers)
+    model = ks.models.Model(inputs=model_inputs, outputs=out)
 
     model.__kgcnn_model_version__ = __model_version__
     return model

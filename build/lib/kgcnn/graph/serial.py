@@ -18,6 +18,7 @@ def get_preprocessor(name: Union[str, dict], **kwargs):
         "make_undirected_edges": "MakeUndirectedEdges",
         "add_edge_self_loops": "AddEdgeSelfLoops",
         "sort_edge_indices": "SortEdgeIndices",
+        "validate_edge_indices": "ValidateEdgeIndices",
         "set_edge_indices_reverse": "SetEdgeIndicesReverse",
         "pad_property": "PadProperty",
         "set_edge_weights_uniform": "SetEdgeWeightsUniform",

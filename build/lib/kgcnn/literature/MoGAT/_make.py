@@ -96,29 +96,36 @@ def make_model(inputs: list = None,
 
     # Make input
     node_input = ks.layers.Input(**inputs[0])
-    edge_input = ks.layers.Input(**inputs[1])
+    edge_attr_input = ks.layers.Input(**inputs[1])
     edge_index_input = ks.layers.Input(**inputs[2])
-    graph_state_input = ks.layers.Input(**inputs[3]) if use_graph_state else None
+    
+    # Handle graph_descriptors input if provided (for descriptors)
+    if len(inputs) > 3:
+        graph_descriptors_input = ks.layers.Input(**inputs[3])
+    else:
+        graph_descriptors_input = None
 
     # Embedding, if no feature dimension
     n = OptionalInputEmbedding(**input_embedding['node'],
                                use_embedding=len(inputs[0]['shape']) < 2)(node_input)
     ed = OptionalInputEmbedding(**input_embedding['edge'],
-                                use_embedding=len(inputs[1]['shape']) < 2)(edge_input)
-    graph_state = OptionalInputEmbedding(
-        **input_embedding["graph"],
-        use_embedding=len(inputs[3]["shape"]) < 1)(graph_state_input) if use_graph_state else None
-
-    edi = edge_index_input
+                                use_embedding=len(inputs[1]['shape']) < 2)(edge_attr_input)
+    # Process graph_descriptors if provided (use Dense layer for continuous values)
+    if graph_descriptors_input is not None and "graph" in input_embedding:
+        graph_descriptors = Dense(input_embedding['graph']['output_dim'], 
+                                 activation='relu', 
+                                 use_bias=True)(graph_descriptors_input)
+    else:
+        graph_descriptors = None
 
     # Model
     nk = Dense(units=attention_args['units'])(n)
-    ck = AttentiveHeadFP_(use_edge_features=True, **attention_args)([nk, ed, edi])
+    ck = AttentiveHeadFP_(use_edge_features=True, **attention_args)([nk, ed, edge_index_input])
     nk = GRUUpdate(units=attention_args['units'])([nk, ck])
     nk = Dropout(rate=dropout)(nk) # adding dropout to the first code not in the original AttFP code ?
     list_emb=[nk] # "aka r1"
     for i in range(1, depthato):
-        ck = AttentiveHeadFP_(**attention_args)([nk, ed, edi])
+        ck = AttentiveHeadFP_(**attention_args)([nk, ed, edge_index_input])
         nk = GRUUpdate(units=attention_args['units'])([nk, ck])
         nk = Dropout(rate=dropout)(nk)
         list_emb.append(nk)
@@ -132,30 +139,29 @@ def make_model(inputs: list = None,
         at = ks.layers.Attention(dropout=dropout,use_scale=True, score_mode="dot")([out, out])
         # we apply the dot product
         out = at*out
+        
+        # Concatenate with graph descriptors if provided
+        if graph_descriptors is not None:
+            # Flatten graph_descriptors to match the rank of out
+            graph_descriptors_flat = tf.keras.layers.Flatten()(graph_descriptors)
+            out = LazyConcatenate()([graph_descriptors_flat, out])
+        
         # in the paper this is only one dense layer to the target ... very simple
-        if use_graph_state:
-            out = ks.layers.Concatenate()([graph_state, out])
         out = MLP(**output_mlp)(out)
         
 
     elif output_embedding == 'node':
-        if use_graph_state:
-            graph_state_node = GatherState()([graph_state, n])
-            n = LazyConcatenate()([n, graph_state_node])
         out = GraphMLP(**output_mlp)(n)
         if output_to_tensor:  # For tf version < 2.8 cast to tensor below.
             out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
     else:
         raise ValueError("Unsupported graph embedding for mode `MoGAT`")
 
-    if use_graph_state:
-        model = ks.models.Model(
-            inputs=[node_input, edge_index_input, graph_state_input],
-            outputs=out, 
-            name=name)
+    if graph_descriptors_input is not None:
+        model = ks.models.Model(inputs=[node_input, edge_attr_input, edge_index_input, graph_descriptors_input], 
+            outputs=out, name=name)
     else:
-        model = ks.models.Model(
-            inputs=[node_input, edge_input, edge_index_input], 
+        model = ks.models.Model(inputs=[node_input, edge_attr_input, edge_index_input], 
             outputs=out, name=name)
 
     model.__kgcnn_model_version__ = __model_version__

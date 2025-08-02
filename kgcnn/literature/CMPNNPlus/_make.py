@@ -9,6 +9,13 @@ from ...layers.pooling import PoolingNodes
 from ._cmpnnplus_conv import CMPNNPlusPoolingEdges
 from kgcnn.model.utils import update_model_kwargs
 
+# Import the generalized input handling utilities
+from kgcnn.utils.input_utils import (
+    get_input_names, find_input_by_name, create_input_layer,
+    check_descriptor_input, create_descriptor_processing_layer,
+    fuse_descriptors_with_output, build_model_inputs
+)
+
 ks = tf.keras
 
 # Keep track of model version from commit date in literature.
@@ -107,31 +114,40 @@ def make_model(name: str = None,
         :obj:`tf.keras.models.Model`
     """
 
-    # Make input
-    node_input = ks.layers.Input(**inputs[0])
-    edge_input = ks.layers.Input(**inputs[1])
-    edge_index_input = ks.layers.Input(**inputs[2])
-    edge_index_reverse_input = ks.layers.Input(**inputs[3])
+    # ROBUST: Use generalized input handling
+    input_names = get_input_names(inputs)
+    print(f"🔍 Input names: {input_names}")
     
-    # Handle graph_descriptors input if provided (for descriptors)
-    if len(inputs) > 4:
-        graph_descriptors_input = ks.layers.Input(**inputs[4])
-    else:
-        graph_descriptors_input = None
+    # Create input layers using name-based lookup
+    input_layers = {}
+    for i, input_config in enumerate(inputs):
+        name = input_config['name']
+        input_layers[name] = create_input_layer(input_config)
+        print(f"✅ Created input layer: {name} at position {i}")
+    
+    # Extract required inputs
+    node_input = input_layers['node_attributes']
+    edge_input = input_layers['edge_attributes']
+    edge_index_input = input_layers['edge_indices']
+    edge_index_reverse_input = input_layers['edge_indices_reverse']
+    
+    # Check for optional descriptor input
+    descriptor_result = check_descriptor_input(inputs)
+    graph_descriptors_input = None
+    if descriptor_result:
+        idx, config = descriptor_result
+        graph_descriptors_input = input_layers['graph_descriptors']
 
     # Embedding
     n = OptionalInputEmbedding(**input_embedding["node"])(node_input)
     e = OptionalInputEmbedding(**input_embedding["edge"])(edge_input)
     
-    # Graph state embedding if provided
-    if use_graph_state and graph_descriptors_input is not None:
-        # FIX: Use Dense layer for continuous float descriptors instead of OptionalInputEmbedding
-        # Descriptors are float values, not categorical indices!
-        graph_embedding = Dense(input_embedding.get("graph", {"output_dim": 64})["output_dim"], 
-                               activation='relu', 
-                               use_bias=True)(graph_descriptors_input)
-    else:
-        graph_embedding = None
+    # ROBUST: Use generalized descriptor processing
+    graph_embedding = create_descriptor_processing_layer(
+        graph_descriptors_input, 
+        input_embedding, 
+        layer_name="graph_descriptor_processing"
+    )
 
     # CMPNN+ message passing with communicative layers
     n = CMPNNPlusPoolingEdges(
@@ -145,16 +161,11 @@ def make_model(name: str = None,
         communication_levels=communication_levels
     )([n, e, edge_index_input, edge_index_reverse_input])
 
-    # Graph state fusion if provided
-    if use_graph_state and graph_embedding is not None:
-        # Concatenate or add graph embedding
-        n = ks.layers.Concatenate()([n, graph_embedding])
-        # Or use attention to fuse
-        # n = GraphAttention(units=edge_dense["units"])([n, graph_embedding])
-
     # Output embedding choice
     if output_embedding == "graph":
         out = PoolingNodes(**pooling_args)(n)
+        # ROBUST: Use generalized descriptor fusion at graph level
+        out = fuse_descriptors_with_output(out, graph_embedding, fusion_method="concatenate")
     elif output_embedding == "node":
         out = n
     else:
@@ -163,11 +174,12 @@ def make_model(name: str = None,
     # Output MLP
     out = MLP(**output_mlp)(out)
 
-    # Output casting
-    if output_to_tensor:
+    # Output casting - only if output is still ragged
+    if output_to_tensor and hasattr(out, 'ragged_rank') and out.ragged_rank > 0:
         out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
 
-    model = ks.models.Model(inputs=[node_input, edge_input, edge_index_input, edge_index_reverse_input] + ([graph_descriptors_input] if graph_descriptors_input is not None else []),
-                           outputs=out)
+    # ROBUST: Use generalized model input building
+    model_inputs = build_model_inputs(inputs, input_layers)
+    model = ks.models.Model(inputs=model_inputs, outputs=out, name=name)
     model.compile()
     return model 

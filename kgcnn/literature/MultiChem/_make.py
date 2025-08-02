@@ -118,35 +118,40 @@ def make_model(name: str = None,
         :obj:`tf.keras.models.Model`
     """
     
-    # Make input
-    node_input = ks.layers.Input(**inputs[0])
-    edge_input = ks.layers.Input(**inputs[1])
-    edge_index_input = ks.layers.Input(**inputs[2])
+    # ROBUST: Use generalized input handling
+    input_names = get_input_names(inputs)
+    input_layers = {}
+    
+    for i, input_config in enumerate(inputs):
+        input_layers[input_config['name']] = create_input_layer(input_config)
+    
+    # Get descriptor input if present
+    graph_descriptors_input = None
+    if check_descriptor_input(inputs):
+        graph_descriptors_input = input_layers['graph_descriptors']
+    
+    # ROBUST: Use generalized descriptor processing
+    graph_embedding = create_descriptor_processing_layer(
+        graph_descriptors_input,
+        input_embedding,
+        layer_name="graph_descriptor_processing"
+    )
+    
+    # Get main inputs
+    node_input = input_layers['node_attributes']
+    edge_input = input_layers['edge_attributes']
+    edge_index_input = input_layers['edge_indices']
     
     # Handle directed vs undirected inputs
-    if use_directed and len(inputs) > 3:
-        edge_index_reverse_input = ks.layers.Input(**inputs[3])
-        graph_descriptors_input = ks.layers.Input(**inputs[4]) if len(inputs) > 4 else None
-    else:
-        edge_index_reverse_input = None
-        graph_descriptors_input = ks.layers.Input(**inputs[3]) if len(inputs) > 3 else None
+    edge_index_reverse_input = None
+    if use_directed and 'edge_indices_reverse' in input_layers:
+        edge_index_reverse_input = input_layers['edge_indices_reverse']
 
     # Embedding
     n = OptionalInputEmbedding(**input_embedding["node"])(node_input)
     e = OptionalInputEmbedding(**input_embedding["edge"])(edge_input)
     
-    # Graph state embedding if provided
-    # FIX: Always create descriptor processing if descriptors are present, regardless of use_graph_state
-    if graph_descriptors_input is not None:
-        # FIX: Use Dense layer for continuous float descriptors instead of OptionalInputEmbedding
-        # Descriptors are float values, not categorical indices!
-        graph_embedding = Dense(input_embedding.get("graph", {"output_dim": 64})["output_dim"], 
-                               activation='relu', 
-                               use_bias=True)(graph_descriptors_input)
-        print(f"✅ MultiChem: Created descriptor processing layer for {graph_descriptors_input.shape}")
-    else:
-        graph_embedding = None
-        print(f"⚠️  MultiChem: No descriptors provided")
+    # ROBUST: Descriptor processing already handled by create_descriptor_processing_layer above
 
     # MultiChem layers with DUAL processing
     for i in range(depth):
@@ -188,13 +193,8 @@ def make_model(name: str = None,
     if output_to_tensor and hasattr(out, 'to_tensor'):
         out = ChangeTensorType(input_tensor_type="ragged", output_tensor_type="tensor")(out)
 
-    # Create model inputs
-    model_inputs = [node_input, edge_input, edge_index_input]
-    if use_directed and edge_index_reverse_input is not None:
-        model_inputs.append(edge_index_reverse_input)
-    if graph_descriptors_input is not None:
-        model_inputs.append(graph_descriptors_input)
-    
+    # ROBUST: Use generalized model input building
+    model_inputs = build_model_inputs(inputs, input_layers)
     model = ks.models.Model(inputs=model_inputs, outputs=out, name=name)
     model.__kgcnn_model_version__ = __model_version__
     

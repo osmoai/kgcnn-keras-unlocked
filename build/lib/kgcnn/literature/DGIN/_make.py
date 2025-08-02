@@ -208,3 +208,142 @@ def make_model(name: str = None,
             outputs=out, name=name)
     model.__kgcnn_model_version__ = __model_version__
     return model
+
+
+def make_contrastive_dgin_model(name: str = None,
+                               inputs: list = None,
+                               input_embedding: dict = None,
+                               pooling_args: dict = None,
+                               edge_initialize: dict = None,
+                               edge_dense: dict = None,
+                               edge_activation: dict = None,
+                               node_dense: dict = None,
+                               dropoutDMPNN: dict = None,
+                               dropoutGIN: dict = None,
+                               depthDMPNN: int = None,
+                               depthGIN: int = None,
+                               gin_args: dict = None,
+                               gin_mlp: dict = None,
+                               last_mlp: dict = None,
+                               contrastive_args: dict = None,
+                               verbose: int = None,
+                               use_graph_state: bool = False,
+                               output_embedding: str = None,
+                               output_to_tensor: bool = None,
+                               output_mlp: dict = None
+                               ):
+    r"""Make Contrastive DGIN model that uses regular DGIN as base and adds contrastive learning losses.
+    
+    This is a simple implementation that:
+    1. Uses regular DGIN as the base model
+    2. Adds contrastive learning losses on top
+    3. Properly handles graph_descriptors input
+    
+    Args:
+        name (str): Name of the model.
+        inputs (list): List of dictionaries unpacked in :obj:`tf.keras.layers.Input`.
+        input_embedding (dict): Dictionary of embedding arguments.
+        pooling_args (dict): Dictionary of pooling layer arguments.
+        edge_initialize (dict): Dictionary of edge initialization arguments.
+        edge_dense (dict): Dictionary of edge dense layer arguments.
+        edge_activation (dict): Dictionary of edge activation arguments.
+        node_dense (dict): Dictionary of node dense layer arguments.
+        dropoutDMPNN (dict): Dictionary of DMPNN dropout arguments.
+        dropoutGIN (dict): Dictionary of GIN dropout arguments.
+        depthDMPNN (int): Number of DMPNN layers.
+        depthGIN (int): Number of GIN layers.
+        gin_args (dict): Dictionary of GIN layer arguments.
+        gin_mlp (dict): Dictionary of GIN MLP arguments.
+        last_mlp (dict): Dictionary of last MLP arguments.
+        contrastive_args (dict): Dictionary of contrastive learning arguments.
+        verbose (int): Level of print output.
+        use_graph_state (bool): Whether to use graph descriptors.
+        output_embedding (str): Output embedding type.
+        output_to_tensor (bool): Whether to convert output to tensor.
+        output_mlp (dict): Output MLP configuration.
+        
+    Returns:
+        :obj:`tf.keras.models.Model`
+    """
+    # Default contrastive arguments
+    if contrastive_args is None:
+        contrastive_args = {
+            "use_contrastive_loss": True,
+            "contrastive_loss_type": "infonce",
+            "temperature": 0.1,
+            "contrastive_weight": 0.1
+        }
+    
+    # Create the base DGIN model
+    base_model = make_model(
+        name=name,
+        inputs=inputs,
+        input_embedding=input_embedding,
+        pooling_args=pooling_args,
+        edge_initialize=edge_initialize,
+        edge_dense=edge_dense,
+        edge_activation=edge_activation,
+        node_dense=node_dense,
+        dropoutDMPNN=dropoutDMPNN,
+        dropoutGIN=dropoutGIN,
+        depthDMPNN=depthDMPNN,
+        depthGIN=depthGIN,
+        gin_args=gin_args,
+        gin_mlp=gin_mlp,
+        last_mlp=last_mlp,
+        verbose=verbose,
+        use_graph_state=use_graph_state,
+        output_embedding=output_embedding,
+        output_to_tensor=output_to_tensor,
+        output_mlp=output_mlp
+    )
+    
+    # Add contrastive learning capabilities
+    if contrastive_args.get("use_contrastive_loss", False):
+        # Create a custom loss class that combines main task loss with contrastive loss
+        class ContrastiveLoss(tf.keras.losses.Loss):
+            def __init__(self, contrastive_args, **kwargs):
+                super(ContrastiveLoss, self).__init__(**kwargs)
+                self.contrastive_args = contrastive_args
+                
+            def call(self, y_true, y_pred, sample_weight=None):
+                # Main task loss (binary crossentropy for classification)
+                main_loss = tf.keras.losses.binary_crossentropy(y_true, y_pred)
+                
+                # Apply sample weights if provided
+                if sample_weight is not None:
+                    main_loss = main_loss * sample_weight
+                
+                # Simple contrastive loss based on predictions
+                # For similar inputs (same class), predictions should be similar
+                # For different inputs (different class), predictions should be different
+                batch_size = tf.shape(y_pred)[0]
+                
+                # Create similarity matrix based on predictions
+                pred_norm = tf.nn.l2_normalize(y_pred, axis=1)
+                similarity_matrix = tf.matmul(pred_norm, tf.transpose(pred_norm))
+                
+                # Create target similarity matrix based on true labels
+                y_true_expanded = tf.expand_dims(y_true, 1)
+                target_similarity = tf.cast(tf.equal(y_true_expanded, tf.transpose(y_true_expanded)), tf.float32)
+                
+                # Contrastive loss: maximize similarity for same class, minimize for different class
+                temperature = self.contrastive_args.get("temperature", 0.1)
+                contrastive_loss = tf.reduce_mean(
+                    -target_similarity * tf.math.log(tf.nn.sigmoid(similarity_matrix / temperature) + 1e-8)
+                )
+                
+                # Combine losses
+                contrastive_weight = self.contrastive_args.get("contrastive_weight", 0.1)
+                total_loss = main_loss + contrastive_weight * contrastive_loss
+                
+                return total_loss
+        
+        # Compile the model with the contrastive loss
+        base_model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+            loss=ContrastiveLoss(contrastive_args),
+            metrics=['accuracy']
+        )
+    
+    return base_model

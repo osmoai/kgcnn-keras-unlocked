@@ -14,6 +14,13 @@ from kgcnn.layers.geom import NodePosition, NodeDistanceEuclidean, GaussBasisLay
 from ._graph_transformer_conv import GraphTransformerLayer
 from kgcnn.model.utils import update_model_kwargs
 
+# Import the generalized input handling utilities
+from kgcnn.utils.input_utils import (
+    get_input_names, find_input_by_name, create_input_layer,
+    check_descriptor_input, create_descriptor_processing_layer,
+    fuse_descriptors_with_output, build_model_inputs
+)
+
 ks = tf.keras
 
 __model_version__ = "2025.01.27"
@@ -97,16 +104,28 @@ def make_model(inputs: list = None,
     Returns:
         tf.keras.models.Model: Graph Transformer model
     """
-    # Make inputs
-    node_input = ks.layers.Input(**inputs[0])
-    edge_input = ks.layers.Input(**inputs[1])
-    edge_index_input = ks.layers.Input(**inputs[2])
+    # ROBUST: Use generalized input handling
+    input_names = get_input_names(inputs)
+    print(f"🔍 Input names: {input_names}")
     
-    # Handle graph_descriptors input if provided
-    if len(inputs) > 3:
-        graph_descriptors_input = ks.layers.Input(**inputs[3])
-    else:
-        graph_descriptors_input = None
+    # Create input layers using name-based lookup
+    input_layers = {}
+    for i, input_config in enumerate(inputs):
+        name = input_config['name']
+        input_layers[name] = create_input_layer(input_config)
+        print(f"✅ Created input layer: {name} at position {i}")
+    
+    # Extract required inputs
+    node_input = input_layers['node_attributes']
+    edge_input = input_layers['edge_attributes'] 
+    edge_index_input = input_layers['edge_indices']
+    
+    # Check for optional descriptor input
+    descriptor_result = check_descriptor_input(inputs)
+    graph_descriptors_input = None
+    if descriptor_result:
+        idx, config = descriptor_result
+        graph_descriptors_input = input_layers['graph_descriptors']
 
     # Embedding layers
     n = OptionalInputEmbedding(**input_embedding['node'],
@@ -114,13 +133,12 @@ def make_model(inputs: list = None,
     e = OptionalInputEmbedding(**input_embedding['edge'],
                                use_embedding=len(inputs[1]['shape']) < 2)(edge_input)
     
-    # Embed graph_descriptors if provided
-    if graph_descriptors_input is not None and "graph" in input_embedding:
-        graph_descriptors = OptionalInputEmbedding(
-            **input_embedding["graph"],
-            use_embedding=len(inputs[3]["shape"]) < 1)(graph_descriptors_input)
-    else:
-        graph_descriptors = None
+    # ROBUST: Use generalized descriptor processing
+    graph_embedding = create_descriptor_processing_layer(
+        graph_descriptors_input, 
+        input_embedding, 
+        layer_name="graph_descriptor_processing"
+    )
 
     # Generate positional encodings if requested
     positional_encoding = None
@@ -134,8 +152,8 @@ def make_model(inputs: list = None,
         transformer_inputs = [n, e, edge_index_input]
         if positional_encoding is not None:
             transformer_inputs.append(positional_encoding)
-        if graph_descriptors is not None:
-            transformer_inputs.append(graph_descriptors)
+        if graph_embedding is not None:
+            transformer_inputs.append(graph_embedding)
         
         n = GraphTransformerLayer(**transformer_args)(transformer_inputs)
     
@@ -143,18 +161,14 @@ def make_model(inputs: list = None,
     if output_embedding == 'graph':
         if use_set2set:
             out = PoolingSet2SetEncoder(**set2set_args)(n)
+            # Set2Set can create extra dimensions, ensure proper shape for fusion
+            if len(out.shape) == 3 and out.shape[1] == 1:
+                out = tf.keras.layers.Lambda(lambda x: tf.squeeze(x, axis=1))(out)
         else:
             out = PoolingNodes(**pooling_args)(n)
         
-        # Add graph descriptor if provided
-        if graph_descriptors is not None:
-            # Squeeze the Set2Set output to remove extra dimension if present
-            if len(out.shape) == 3 and out.shape[1] == 1:
-                out = tf.keras.layers.Lambda(lambda x: tf.squeeze(x, axis=1))(out)
-            # Flatten graph_descriptors to match the rank of out
-            graph_descriptors_flat = tf.keras.layers.Flatten()(graph_descriptors)
-            out = LazyConcatenate(axis=-1)([out, graph_descriptors_flat])
-        
+        # ROBUST: Use generalized descriptor fusion
+        out = fuse_descriptors_with_output(out, graph_embedding, fusion_method="concatenate")
         out = MLP(**output_mlp)(out)
         
     elif output_embedding == 'node':
@@ -164,11 +178,8 @@ def make_model(inputs: list = None,
     else:
         raise ValueError("Unsupported output embedding for mode `GraphTransformer`")
 
-    # Create model
-    model_inputs = [node_input, edge_input, edge_index_input]
-    if graph_descriptors_input is not None:
-        model_inputs.append(graph_descriptors_input)
-    
+    # ROBUST: Use generalized model input building
+    model_inputs = build_model_inputs(inputs, input_layers)
     model = ks.models.Model(inputs=model_inputs, outputs=out, name=name)
     model.__kgcnn_model_version__ = __model_version__
     
@@ -211,16 +222,29 @@ def make_crystal_model(inputs: list = None,
     Returns:
         tf.keras.models.Model: Graph Transformer model for crystals
     """
-    # Make inputs
-    node_input = ks.layers.Input(**inputs[0])
-    edge_input = ks.layers.Input(**inputs[1])
-    edge_index_input = ks.layers.Input(**inputs[2])
+    # ROBUST: Use generalized input handling
+    input_names = get_input_names(inputs)
+    input_layers = {}
     
-    # Handle graph_descriptors input if provided
-    if len(inputs) > 3:
-        graph_descriptors_input = ks.layers.Input(**inputs[3])
-    else:
-        graph_descriptors_input = None
+    for i, input_config in enumerate(inputs):
+        input_layers[input_config['name']] = create_input_layer(input_config)
+    
+    # Get descriptor input if present
+    graph_descriptors_input = None
+    if check_descriptor_input(inputs):
+        graph_descriptors_input = input_layers['graph_descriptors']
+    
+    # ROBUST: Use generalized descriptor processing
+    graph_embedding = create_descriptor_processing_layer(
+        graph_descriptors_input,
+        input_embedding,
+        layer_name="graph_descriptor_processing"
+    )
+    
+    # Get main inputs
+    node_input = input_layers['node_attributes']
+    edge_input = input_layers['edge_attributes']
+    edge_index_input = input_layers['edge_indices']
 
     # Embedding layers
     n = OptionalInputEmbedding(**input_embedding['node'],
@@ -228,13 +252,7 @@ def make_crystal_model(inputs: list = None,
     e = OptionalInputEmbedding(**input_embedding['edge'],
                                use_embedding=len(inputs[1]['shape']) < 2)(edge_input)
     
-    # Embed graph_descriptors if provided
-    if graph_descriptors_input is not None and "graph" in input_embedding:
-        graph_descriptors = OptionalInputEmbedding(
-            **input_embedding["graph"],
-            use_embedding=len(inputs[3]["shape"]) < 1)(graph_descriptors_input)
-    else:
-        graph_descriptors = None
+    # ROBUST: Descriptor processing already handled by create_descriptor_processing_layer above
 
     # Add geometric features for crystals
     # Node positions (if available in inputs)
@@ -263,8 +281,8 @@ def make_crystal_model(inputs: list = None,
         transformer_inputs = [n, e, edge_index_input]
         if positional_encoding is not None:
             transformer_inputs.append(positional_encoding)
-        if graph_descriptors is not None:
-            transformer_inputs.append(graph_descriptors)
+        if graph_embedding is not None:
+            transformer_inputs.append(graph_embedding)
         
         n = GraphTransformerLayer(**transformer_args)(transformer_inputs)
     
@@ -275,12 +293,8 @@ def make_crystal_model(inputs: list = None,
         else:
             out = PoolingNodes(**pooling_args)(n)
         
-        # Add graph descriptor if provided
-        if graph_descriptors is not None:
-            # Flatten graph_descriptors to match the rank of out
-            graph_descriptors_flat = tf.keras.layers.Flatten()(graph_descriptors)
-            out = LazyConcatenate(axis=-1)([out, graph_descriptors_flat])
-        
+        # ROBUST: Use generalized descriptor fusion
+        out = fuse_descriptors_with_output(out, graph_embedding, fusion_method="concatenate")
         out = MLP(**output_mlp)(out)
         
     elif output_embedding == 'node':
@@ -290,15 +304,8 @@ def make_crystal_model(inputs: list = None,
     else:
         raise ValueError("Unsupported output embedding for mode `GraphTransformer`")
 
-    # Create model
-    model_inputs = [node_input, edge_input, edge_index_input]
-    if graph_descriptors_input is not None:
-        model_inputs.append(graph_descriptors_input)
-    if len(inputs) > 4:
-        model_inputs.append(pos_input)
-    if len(inputs) > 5:
-        model_inputs.append(dist_input)
-    
+    # ROBUST: Use generalized model input building
+    model_inputs = build_model_inputs(inputs, input_layers)
     model = ks.models.Model(inputs=model_inputs, outputs=out, name=name)
     model.__kgcnn_model_version__ = __model_version__
     

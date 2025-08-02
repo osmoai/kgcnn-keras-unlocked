@@ -9,6 +9,7 @@ from kgcnn.layers.gather import GatherState
 
 from kgcnn.layers.mlp import GraphMLP, MLP
 from kgcnn.model.utils import update_model_kwargs
+from kgcnn.utils.input_utils import get_input_names, create_input_layer, check_descriptor_input, create_descriptor_processing_layer, fuse_descriptors_with_output, build_model_inputs
 
 # Keep track of model version from commit date in literature.
 # To be updated if model is changed in a significant way.
@@ -29,7 +30,8 @@ model_default = {
     "name": "MoGAT",
     "inputs": [{"shape": (None,), "name": "node_attributes", "dtype": "float32", "ragged": True},
                {"shape": (None,), "name": "edge_attributes", "dtype": "float32", "ragged": True},
-               {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True}],
+               {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
+               {"shape": (None, 2), "name": "graph_descriptors", "dtype": "float32", "ragged": False}],
     "input_embedding": {"node": {"input_dim": 95, "output_dim": 64},
                         "edge": {"input_dim": 5, "output_dim": 64}},
     "attention_args": {"units": 32},
@@ -94,29 +96,35 @@ def make_model(inputs: list = None,
         :obj:`tf.keras.models.Model`
     """
 
-    # Make input
-    node_input = ks.layers.Input(**inputs[0])
-    edge_attr_input = ks.layers.Input(**inputs[1])
-    edge_index_input = ks.layers.Input(**inputs[2])
+    # ROBUST: Use generalized input handling
+    input_names = get_input_names(inputs)
+    input_layers = {}
     
-    # Handle graph_descriptors input if provided (for descriptors)
-    if len(inputs) > 3:
-        graph_descriptors_input = ks.layers.Input(**inputs[3])
-    else:
-        graph_descriptors_input = None
-
+    for i, input_config in enumerate(inputs):
+        input_layers[input_config['name']] = create_input_layer(input_config)
+    
+    # Get descriptor input if present
+    graph_descriptors_input = None
+    if check_descriptor_input(inputs):
+        graph_descriptors_input = input_layers['graph_descriptors']
+    
+    # ROBUST: Use generalized descriptor processing
+    graph_embedding = create_descriptor_processing_layer(
+        graph_descriptors_input,
+        input_embedding,
+        layer_name="graph_descriptor_processing"
+    )
+    
+    # Get main inputs
+    node_input = input_layers['node_attributes']
+    edge_attr_input = input_layers['edge_attributes']
+    edge_index_input = input_layers['edge_indices']
+    
     # Embedding, if no feature dimension
     n = OptionalInputEmbedding(**input_embedding['node'],
                                use_embedding=len(inputs[0]['shape']) < 2)(node_input)
     ed = OptionalInputEmbedding(**input_embedding['edge'],
                                 use_embedding=len(inputs[1]['shape']) < 2)(edge_attr_input)
-    # Process graph_descriptors if provided (use Dense layer for continuous values)
-    if graph_descriptors_input is not None and "graph" in input_embedding:
-        graph_descriptors = Dense(input_embedding['graph']['output_dim'], 
-                                 activation='relu', 
-                                 use_bias=True)(graph_descriptors_input)
-    else:
-        graph_descriptors = None
 
     # Model
     nk = Dense(units=attention_args['units'])(n)
@@ -140,11 +148,8 @@ def make_model(inputs: list = None,
         # we apply the dot product
         out = at*out
         
-        # Concatenate with graph descriptors if provided
-        if graph_descriptors is not None:
-            # Flatten graph_descriptors to match the rank of out
-            graph_descriptors_flat = tf.keras.layers.Flatten()(graph_descriptors)
-            out = LazyConcatenate()([graph_descriptors_flat, out])
+        # ROBUST: Use generalized descriptor fusion
+        out = fuse_descriptors_with_output(out, graph_embedding, fusion_method="concatenate")
         
         # in the paper this is only one dense layer to the target ... very simple
         out = MLP(**output_mlp)(out)
@@ -157,12 +162,9 @@ def make_model(inputs: list = None,
     else:
         raise ValueError("Unsupported graph embedding for mode `MoGAT`")
 
-    if graph_descriptors_input is not None:
-        model = ks.models.Model(inputs=[node_input, edge_attr_input, edge_index_input, graph_descriptors_input], 
-            outputs=out, name=name)
-    else:
-        model = ks.models.Model(inputs=[node_input, edge_attr_input, edge_index_input], 
-            outputs=out, name=name)
+    # ROBUST: Use generalized model input building
+    model_inputs = build_model_inputs(inputs, input_layers)
+    model = ks.models.Model(inputs=model_inputs, outputs=out, name=name)
 
     model.__kgcnn_model_version__ = __model_version__
     return model
