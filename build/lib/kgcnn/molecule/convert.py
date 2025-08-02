@@ -95,94 +95,6 @@ except ImportError:
     rdkit_smile_to_mol = None
     rdkit_xyz_to_mol = None
 
-try:
-    # There problems with openbabel if system variable is not set.
-    # Openbabel may not be fully threadsafe, but is improved in version 3.0.
-    from openbabel import openbabel
-
-    if "BABEL_DATADIR" not in os.environ:
-        module_logger.warning(
-            "In case openbabel fails, you can set `kgcnn.mol.convert.openbabel_smile_to_mol` to `None` for disable.")
-
-
-    def openbabel_smile_to_mol(smile: str, sanitize: bool = True, add_hydrogen: bool = True,
-                               make_conformers: bool = True, optimize_conformer: bool = True,
-                               random_seed: int = 42,
-                               stop_logging: bool = False):
-        if stop_logging:
-            openbabel.obErrorLog.StopLogging()
-
-        try:
-            m = openbabel.OBMol()
-            ob_conversion = openbabel.OBConversion()
-            format_okay = ob_conversion.SetInAndOutFormats("smi", "mol")
-            read_okay = ob_conversion.ReadString(m, smile)
-            is_okay = {"format_okay": format_okay, "read_okay": read_okay}
-            if make_conformers:
-                # We need to make conformer with builder
-                builder = openbabel.OBBuilder()
-                build_okay = builder.Build(m)
-                is_okay.update({"build_okay": build_okay})
-            if add_hydrogen:
-                # it seems h's are made after build, an get embedded too
-                m.AddHydrogens()
-            if optimize_conformer and make_conformers:
-                ff = openbabel.OBForceField.FindType("mmff94")
-                ff_setup_okay = ff.Setup(m)
-                ff.SteepestDescent(100)  # defaults are 50-500 in pybel
-                ff.GetCoordinates(m)
-                is_okay.update({"ff_setup_okay": ff_setup_okay})
-            all_okay = all(list(is_okay.values()))
-            if not all_okay:
-                print(
-                    "WARNING: Openbabel returned false flag %s" % [key for key, value in is_okay.items() if not value])
-        except:
-            m = None
-            ob_conversion = None
-
-        # Set back to default
-        if stop_logging:
-            openbabel.obErrorLog.StartLogging()
-
-        if m is not None:
-            return ob_conversion.WriteString(m)
-        return None
-
-
-    def openbabel_xyz_to_mol(xyz_string: str, charge: int = 0, stop_logging: bool = False):
-        """Convert xyz-string to mol-string.
-
-        The order of atoms in the list should be the same as output. Uses openbabel for conversion.
-
-        Args:
-            xyz_string (str): Convert the xyz string to mol-string
-            stop_logging (bool): Whether to stop logging. Default is False.
-
-        Returns:
-            str: Mol-string. Generates bond information in addition to coordinates from xyz-string.
-        """
-        if stop_logging:
-            openbabel.obErrorLog.StopLogging()
-
-        ob_conversion = openbabel.OBConversion()
-        ob_conversion.SetInAndOutFormats("xyz", "mol")
-        # ob_conversion.SetInFormat("xyz")
-
-        mol = openbabel.OBMol()
-        ob_conversion.ReadString(mol, xyz_string)
-        # print(xyz_str)
-
-        out_mol = ob_conversion.WriteString(mol)
-
-        # Set back to default
-        if stop_logging:
-            openbabel.obErrorLog.StartLogging()
-        return out_mol
-
-except ImportError:
-    module_logger.error("Can not import `OpenBabel` package for conversion.")
-    openbabel_smile_to_mol, openbabel_xyz_to_mol = None, None
-
 
 class MolConverter:
 
@@ -208,7 +120,7 @@ class MolConverter:
         if num_workers is None:
             num_workers = os.cpu_count()
 
-        if rdkit_smile_to_mol is None and openbabel_smile_to_mol is None:
+        if rdkit_smile_to_mol is None:
             raise ModuleNotFoundError("Can not convert smiles. Missing `RDkit` or `OpenBabel` packages.")
 
         if num_workers == 1:
@@ -233,11 +145,6 @@ class MolConverter:
             if mol is not None:
                 return mol
 
-        if openbabel_smile_to_mol is not None:
-            mol = openbabel_smile_to_mol(smile=smile, sanitize=sanitize, add_hydrogen=add_hydrogen,
-                                         make_conformers=make_conformers, optimize_conformer=optimize_conformer)
-            if mol is not None:
-                return mol
 
         module_logger.warning("Failed conversion for smile '%s'." % smile)
         return None
@@ -301,10 +208,6 @@ class MolConverter:
             if mol is not None:
                 return mol
 
-        if openbabel_smile_to_mol is not None:
-            mol = openbabel_xyz_to_mol(xyz_string, charge)
-            if mol is not None:
-                return mol
 
         module_logger.warning("Failed conversion for xyz '%s'... ." % xyz_string[:20])
         return None
@@ -320,8 +223,8 @@ class MolConverter:
         Returns:
             list: List of mol blocks as string.
         """
-        if openbabel_xyz_to_mol is None and rdkit_xyz_to_mol is None:
-            raise ModuleNotFoundError("Can not convert XYZ to SDF format, missing package `OpenBabel` or `RDkit`.")
+        if rdkit_xyz_to_mol is None:
+            raise ModuleNotFoundError("Can not convert XYZ to SDF format, missing package `RDkit`.")
 
         xyz_list = read_xyz_file(xyz_path)
         mol_list = []
