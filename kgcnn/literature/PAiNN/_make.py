@@ -44,6 +44,8 @@ model_default = {
     "pooling_args": {"pooling_method": "sum"},
     "conv_args": {"units": 128, "cutoff": None},
     "update_args": {"units": 128},
+    "equiv_normalization": False,
+    "node_normalization": False,
     "depth": 3,
     "verbose": 10,
     "output_embedding": "graph",

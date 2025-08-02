@@ -2374,10 +2374,13 @@ if TRAIN == "True":
 
     if len(descs)>0:
         print('There are Additional Descriptors/Conditions')
-        print(hyper["model"]["config"]['use_graph_state'])
         if 'use_graph_state' in hyper["model"]["config"].keys():
             print('changing graph states and inputs for Descriptors')
+            print(hyper["model"]["config"]['use_graph_state'])
             hyper["model"]["config"]['use_graph_state']=True
+            hyper["model"]["config"]["inputs"].append({"shape": [len(descs)], "name": "graph_descriptors", "dtype": "float32", "ragged": False})
+        else:
+            print('Model does not support use_graph_state, adding descriptor input manually')
             hyper["model"]["config"]["inputs"].append({"shape": [len(descs)], "name": "graph_descriptors", "dtype": "float32", "ragged": False})
 
 
