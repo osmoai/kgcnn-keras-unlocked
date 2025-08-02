@@ -167,6 +167,8 @@ def make_model(inputs: list = None,
     # If equiv_input is not provided, initialize it
     if equiv_input is None:
         # Initialize equivariant features from embedded node features, not raw attributes
+        if equiv_initialize_kwargs is None:
+            equiv_initialize_kwargs = {"dim": 3, "method": "zeros"}
         equiv_input = EquivariantInitialize(**equiv_initialize_kwargs)(z)
 
     edi = bond_index_input
