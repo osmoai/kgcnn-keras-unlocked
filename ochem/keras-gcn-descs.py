@@ -4490,6 +4490,83 @@ elif architecture_name == 'MultiChem':
         }
     }
 
+# GraphSAGE implementation with descriptors support
+elif architecture_name == 'GraphSAGE':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found GraphSAGE architecture with descriptors!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "GraphSAGE",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "node_mlp_args": {"units": [128, 128], "activation": ["relu", "relu"]},
+        "edge_mlp_args": {"units": [128, 128], "activation": ["relu", "relu"]},
+        "pooling_args": {"pooling_method": "sum"},
+        "pooling_nodes_args": {"pooling_method": "sum"},
+        "gather_args": {},
+        "concat_args": {"axis": -1},
+        "use_edge_features": True,
+        "depth": 4,
+        "verbose": 10,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+    }
+    
+    # Update output dimensions based on config file
+    model_config = update_output_dimensions(model_config, architecture_name)
+    
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.GraphSAGE",
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
 # MoGAT implementation with descriptors support
 elif architecture_name == 'MoGAT':
     print(f"Checking architecture: {architecture_name}")
@@ -4528,7 +4605,7 @@ elif architecture_name == 'MoGAT':
     hyper = {
         "model": {
             "class_name": "make_model",
-            "module_name": "kgcnn.literature.PAiNN",
+            "module_name": "kgcnn.literature.MoGAT",
             "config": model_config
         },
         "training": {
@@ -4588,7 +4665,7 @@ elif architecture_name == 'MultiGraphMoE':
         "multigraph_moe_args": {
             "units": 128,
             "num_experts": 4,
-            "expert_types": ["GIN", "GAT", "GCN", "GraphSAGE"],
+            "expert_types": ["GIN", "GAT", "GCN", "GraphSAGE","MNPN"],
             "dropout_rate": 0.1,
             "temperature": 1.0,
             "use_noise": True,
@@ -4598,8 +4675,8 @@ elif architecture_name == 'MultiGraphMoE':
         "use_graph_state": True,
         "output_embedding": "graph",
         "output_to_tensor": True,
-        "output_mlp": {"use_bias": [True, True, True], "units": [256, 128, output_dim],
-                     "activation": ["relu", "relu", "linear"]}
+        "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
     }
     
     # Update output dimensions based on config file
@@ -4609,6 +4686,383 @@ elif architecture_name == 'MultiGraphMoE':
         "model": {
             "class_name": "make_model",
             "module_name": "kgcnn.literature.MultiGraphMoE",
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
+# Schnet implementation with descriptors support
+elif architecture_name == 'Schnet':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found Schnet architecture with descriptors!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "Schnet",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 3], "name": "node_coordinates", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "interaction_args": {"units": 128, "use_bias": True, "activation": "kgcnn>shifted_softplus"},
+        "node_pooling_args": {"pooling_method": "sum"},
+        "depth": 4,
+        "gauss_args": {"bins": 20, "distance": 4, "offset": 0.0, "sigma": 0.4},
+        "verbose": 10,
+        "use_graph_state": True,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+    }
+    
+    # Update output dimensions based on config file
+    model_config = update_output_dimensions(model_config, architecture_name)
+    
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.Schnet",
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
+# HamNet implementation with descriptors support
+elif architecture_name == 'HamNet':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found HamNet architecture with descriptors!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "HamNet",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [None, 3], "name": "node_coordinates", "dtype": "float32", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 64},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "message_kwargs": {"units": 200, "units_edge": 200, "rate": 0.2, "use_dropout": True},
+        "fingerprint_kwargs": {"units": 200, "units_attend": 200, "rate": 0.5, "use_dropout": True, "depth": 3},
+        "gru_kwargs": {"units": 200},
+        "union_type_node": "gru",
+        "union_type_edge": "None",
+        "given_coordinates": True,
+        "depth": 3,
+        "verbose": 10,
+        "use_graph_state": True,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+    }
+    
+    # Update output dimensions based on config file
+    model_config = update_output_dimensions(model_config, architecture_name)
+    
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.HamNet",
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
+# PAiNN implementation with descriptors support
+elif architecture_name == 'PAiNN':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found PAiNN architecture with descriptors!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "PAiNN",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 3], "name": "node_coordinates", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "equiv_initialize_kwargs": {"dim": 3, "method": "zeros"},
+        "pooling_args": {"pooling_method": "sum"},
+        "conv_args": {"units": 128, "conv_pool": "sum"},
+        "update_args": {"units": 128},
+        "depth": 4,
+        "verbose": 10,
+        "use_graph_state": True,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+    }
+    
+    # Update output dimensions based on config file
+    model_config = update_output_dimensions(model_config, architecture_name)
+    
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.PAiNN",
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
+# DimeNetPP implementation with descriptors support
+elif architecture_name == 'DimeNetPP':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found DimeNetPP architecture with descriptors!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "DimeNetPP",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 3], "name": "node_coordinates", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [None, 2], "name": "angle_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128,
+                     "embeddings_initializer": {"class_name": "RandomUniform",
+                                                "config": {"minval": -1.7320508075688772,
+                                                           "maxval": 1.7320508075688772}}}},
+        "emb_size": 128, "out_emb_size": 256, "int_emb_size": 64, "basis_emb_size": 8,
+        "num_blocks": 4, "num_spherical": 7, "num_radial": 6,
+        "cutoff": 5.0, "envelope_exponent": 5,
+        "num_before_skip": 1, "num_after_skip": 2, "num_dense_output": 3,
+        "num_targets": 128, "extensive": False, "output_init": "zeros",
+        "activation": "swish", "verbose": 10,
+        "use_output_mlp": True,
+        "output_embedding": "graph",
+        "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+    }
+    
+    # Update output dimensions based on config file
+    model_config = update_output_dimensions(model_config, architecture_name)
+    
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.DimeNetPP",
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 10, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"map_list": {"method": "set_range", "max_distance": 4, "max_neighbours": 20}},
+                    {"map_list": {"method": "set_angle"}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.0.0"
+        }
+    }
+
+# EGNN implementation with descriptors support
+elif architecture_name == 'EGNN':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found EGNN architecture with descriptors!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "EGNN",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 3], "name": "node_coordinates", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "equiv_initialize_kwargs": {"dim": 3, "method": "zeros"},
+        "pooling_args": {"pooling_method": "sum"},
+        "conv_args": {"units": 128, "conv_pool": "sum"},
+        "update_args": {"units": 128},
+        "depth": 4,
+        "verbose": 10,
+        "use_graph_state": True,
+        "output_embedding": "graph",
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
+                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+    }
+    
+    # Update output dimensions based on config file
+    model_config = update_output_dimensions(model_config, architecture_name)
+    
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.EGNN",
             "config": model_config
         },
         "training": {
@@ -4874,6 +5328,39 @@ if TRAIN == "True":
             model = make_configurable_moe_model(**hyperparam['model']["config"])
         elif architecture_name == 'MultiChem':
             from kgcnn.literature.MultiChem import make_model
+            model = make_model(**hyperparam['model']["config"])
+        elif architecture_name == 'Schnet':
+            from kgcnn.literature.Schnet import make_model
+            model = make_model(**hyperparam['model']["config"])
+        elif architecture_name == 'HamNet':
+            from kgcnn.literature.HamNet import make_model
+            model = make_model(**hyperparam['model']["config"])
+        elif architecture_name == 'EGNN':
+            from kgcnn.literature.EGNN import make_model
+            model = make_model(**hyperparam['model']["config"])
+        elif architecture_name == 'DimeNetPP':
+            from kgcnn.literature.DimeNetPP import make_model
+            model = make_model(**hyperparam['model']["config"])
+        elif architecture_name == 'HDNNP2nd':
+            from kgcnn.literature.HDNNP2nd import make_model
+            model = make_model(**hyperparam['model']["config"])
+        elif architecture_name == 'Megnet':
+            from kgcnn.literature.Megnet import make_model
+            model = make_model(**hyperparam['model']["config"])
+        elif architecture_name == 'CGCNN':
+            from kgcnn.literature.CGCNN import make_model
+            model = make_model(**hyperparam['model']["config"])
+        elif architecture_name == 'INorp':
+            from kgcnn.literature.INorp import make_model
+            model = make_model(**hyperparam['model']["config"])
+        elif architecture_name == 'RGCN':
+            from kgcnn.literature.RGCN import make_model
+            model = make_model(**hyperparam['model']["config"])
+        elif architecture_name == 'GNNFilm':
+            from kgcnn.literature.GNNFilm import make_model
+            model = make_model(**hyperparam['model']["config"])
+        elif architecture_name == 'ContrastiveGNN':
+            from kgcnn.literature.ContrastiveGNN import make_model
             model = make_model(**hyperparam['model']["config"])
         else:
             # For other contrastive models, use the complex ContrastiveGNN module
