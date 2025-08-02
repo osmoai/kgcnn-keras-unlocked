@@ -29,9 +29,9 @@ __model_version__ = "2022.11.25"
 
 model_default = {
     "name": "Schnet",
-    "inputs": [{"shape": (None,), "name": "node_attributes", "dtype": "float32", "ragged": True},
+    "inputs": [{"shape": (None,), "name": "node_number", "dtype": "float32", "ragged": True},
                {"shape": (None, 3), "name": "node_coordinates", "dtype": "float32", "ragged": True},
-               {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
+               {"shape": (None, 2), "name": "range_indices", "dtype": "int64", "ragged": True},
                {"shape": (2,), "name": "graph_descriptors", "dtype": "float32", "ragged": False}],
     "input_embedding": {"node": {"input_dim": 95, "output_dim": 64}, "graph": {"input_dim": 100, "output_dim": 64}},
     "make_distance": True, "expand_distance": True,
@@ -130,9 +130,9 @@ def make_model(inputs: list = None,
     )
 
     # Get main inputs
-    node_input = input_layers['node_attributes']
+    node_input = input_layers['node_number']
     xyz_input = input_layers['node_coordinates']
-    edge_index_input = input_layers['edge_indices']
+    edge_index_input = input_layers['range_indices']
 
     # embedding, if no feature dimension
     n = OptionalInputEmbedding(**input_embedding['node'],
