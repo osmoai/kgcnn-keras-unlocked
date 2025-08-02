@@ -118,9 +118,12 @@ def make_model(name: str = None,
     ed = OptionalInputEmbedding(
         **input_embedding["edge"],
         use_embedding=len(inputs[1]["shape"]) < 2)(edge_input)
-    graph_state = OptionalInputEmbedding(
-        **input_embedding["graph"],
-        use_embedding=len(inputs[4]["shape"]) < 1)(graph_state_input) if use_graph_state else None
+    # Use dense projection for graph descriptors (continuous features)
+    graph_state = Dense(
+        units=input_embedding["graph"]["output_dim"],
+        activation='relu',
+        use_bias=True,
+        name="graph_descriptor_processing")(graph_state_input) if use_graph_state else None
     edi = edge_index_input
     ed_pairs = edge_pair_input
 
