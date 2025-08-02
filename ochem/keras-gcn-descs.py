@@ -4504,23 +4504,21 @@ elif architecture_name == 'GraphSAGE':
             {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         ],
         "input_embedding": {
-            "node": {"input_dim": 95, "output_dim": 128},
-            "edge": {"input_dim": 5, "output_dim": 128},
-            "graph": {"input_dim": 100, "output_dim": 64}
+            "node": {"input_dim": 95, "output_dim": 64},
+            "edge": {"input_dim": 32, "output_dim": 32}
         },
-        "node_mlp_args": {"units": [128, 128], "activation": ["relu", "relu"]},
-        "edge_mlp_args": {"units": [128, 128], "activation": ["relu", "relu"]},
-        "pooling_args": {"pooling_method": "sum"},
+        "node_mlp_args": {"units": [64, 32], "use_bias": True, "activation": ["relu", "linear"]},
+        "edge_mlp_args": {"units": 64, "use_bias": True, "activation": "relu"},
+        "pooling_args": {"pooling_method": "segment_mean"},
         "pooling_nodes_args": {"pooling_method": "sum"},
         "gather_args": {},
         "concat_args": {"axis": -1},
         "use_edge_features": True,
-        "depth": 4,
+        "depth": 3,
         "verbose": 10,
         "output_embedding": "graph",
-        "output_to_tensor": True,
-        "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
-                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+        "output_mlp": {"use_bias": [True, True, False], "units": [64, 32, output_dim],
+                     "activation": ["relu", "relu", "linear"]}
     }
     
     # Update output dimensions based on config file
@@ -4533,20 +4531,14 @@ elif architecture_name == 'GraphSAGE':
             "config": model_config
         },
         "training": {
-            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+            "fit": {"batch_size": 32, "epochs": 500, "validation_freq": 10, "verbose": 2,
+                    "callbacks": [{"class_name": "kgcnn>LinearLearningRateScheduler",
+                                   "config": {"learning_rate_start": 0.5e-3, "learning_rate_stop": 1e-5,
+                                              "epo_min": 400, "epo": 500, "verbose": 0}}]
                     },
-            "compile": {
-                "optimizer": {"class_name": "Adam",
-                              "config": {"lr": {
-                                  "class_name": "ExponentialDecay",
-                                  "config": {"initial_learning_rate": 0.001,
-                                             "decay_steps": 1600,
-                                             "decay_rate": 0.5, "staircase": False}
-                              }
-                              }
-                },
-                "loss": loss_function
-            },
+            "compile": {"optimizer": {"class_name": "Adam", "config": {"lr": 5e-3}},
+                        "loss": "mean_absolute_error"
+                        },
             "cross_validation": {"class_name": "KFold",
                                  "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
         },
@@ -4555,7 +4547,6 @@ elif architecture_name == 'GraphSAGE':
                 "class_name": "MoleculeNetDataset",
                 "config": {},
                 "methods": [
-                    {"set_attributes": {}}
                 ]
             },
             "data_unit": "mol/L"
@@ -4563,7 +4554,7 @@ elif architecture_name == 'GraphSAGE':
         "info": {
             "postfix": "",
             "postfix_file": "",
-            "kgcnn_version": "3.0.0"
+            "kgcnn_version": "2.0.3"
         }
     }
 
@@ -4811,9 +4802,8 @@ elif architecture_name == 'HamNet':
             {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         ],
         "input_embedding": {
-            "node": {"input_dim": 95, "output_dim": 128},
-            "edge": {"input_dim": 5, "output_dim": 64},
-            "graph": {"input_dim": 100, "output_dim": 64}
+            "node": {"input_dim": 95, "output_dim": 64},
+            "edge": {"input_dim": 5, "output_dim": 64}
         },
         "message_kwargs": {"units": 200, "units_edge": 200, "rate": 0.2, "use_dropout": True},
         "fingerprint_kwargs": {"units": 200, "units_attend": 200, "rate": 0.5, "use_dropout": True, "depth": 3},
@@ -4823,11 +4813,11 @@ elif architecture_name == 'HamNet':
         "given_coordinates": True,
         "depth": 3,
         "verbose": 10,
-        "use_graph_state": True,
         "output_embedding": "graph",
-        "output_to_tensor": True,
-        "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
-                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+        "output_mlp": {"use_bias": [True, False], "units": [200, output_dim],
+                     "activation": ['relu', 'linear'],
+                     "use_dropout": [True, False],
+                     "rate": [0.5, 0.0]}
     }
     
     # Update output dimensions based on config file
@@ -4840,19 +4830,11 @@ elif architecture_name == 'HamNet':
             "config": model_config
         },
         "training": {
-            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+            "fit": {"batch_size": 16, "epochs": 800, "validation_freq": 1, "verbose": 2, "callbacks": []
                     },
             "compile": {
-                "optimizer": {"class_name": "Adam",
-                              "config": {"lr": {
-                                  "class_name": "ExponentialDecay",
-                                  "config": {"initial_learning_rate": 0.001,
-                                             "decay_steps": 1600,
-                                             "decay_rate": 0.5, "staircase": False}
-                              }
-                              }
-                },
-                "loss": loss_function
+                "optimizer": {"class_name": "Addons>AdamW", "config": {"lr": 0.001, "weight_decay": 1e-05}},
+                "loss": "mean_squared_error"
             },
             "cross_validation": {"class_name": "KFold",
                                  "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
@@ -4870,7 +4852,7 @@ elif architecture_name == 'HamNet':
         "info": {
             "postfix": "",
             "postfix_file": "",
-            "kgcnn_version": "3.0.0"
+            "kgcnn_version": "2.0.2"
         }
     }
 
@@ -4882,26 +4864,20 @@ elif architecture_name == 'PAiNN':
     model_config = {
         "name": "PAiNN",
         "inputs": [
-            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None], "name": "node_number", "dtype": "float32", "ragged": True},
             {"shape": [None, 3], "name": "node_coordinates", "dtype": "float32", "ragged": True},
-            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [None, 2], "name": "range_indices", "dtype": "int64", "ragged": True},
             {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         ],
-        "input_embedding": {
-            "node": {"input_dim": 95, "output_dim": 128},
-            "graph": {"input_dim": 100, "output_dim": 64}
-        },
-        "equiv_initialize_kwargs": {"dim": 3, "method": "zeros"},
+        "input_embedding": {"node": {"input_dim": 95, "output_dim": 128}},
+        "bessel_basis": {"num_radial": 20, "cutoff": 5.0, "envelope_exponent": 5},
         "pooling_args": {"pooling_method": "sum"},
-        "conv_args": {"units": 128, "conv_pool": "sum"},
+        "conv_args": {"units": 128, "cutoff": None},
         "update_args": {"units": 128},
-        "depth": 4,
+        "depth": 3,
         "verbose": 10,
-        "use_graph_state": True,
         "output_embedding": "graph",
-        "output_to_tensor": True,
-        "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
-                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+        "output_mlp": {"use_bias": [True, True], "units": [128, 1], "activation": ["swish", "linear"]}
     }
     
     # Update output dimensions based on config file
@@ -4917,16 +4893,22 @@ elif architecture_name == 'PAiNN':
             "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
                     },
             "compile": {
-                "optimizer": {"class_name": "Adam",
-                              "config": {"lr": {
-                                  "class_name": "ExponentialDecay",
-                                  "config": {"initial_learning_rate": 0.001,
-                                             "decay_steps": 1600,
-                                             "decay_rate": 0.5, "staircase": False}
-                              }
-                              }
+                "optimizer": {
+                    "class_name": "Addons>MovingAverage", "config": {
+                        "optimizer": {
+                            "class_name": "Adam", "config": {
+                                "learning_rate": {
+                                    "class_name": "kgcnn>LinearWarmupExponentialDecay", "config": {
+                                        "learning_rate": 0.001, "warmup_steps": 30.0, "decay_steps": 40000.0,
+                                        "decay_rate": 0.01
+                                    }
+                                }, "amsgrad": True
+                            }
+                        },
+                        "average_decay": 0.999
+                    }
                 },
-                "loss": loss_function
+                "loss": "mean_absolute_error",
             },
             "cross_validation": {"class_name": "KFold",
                                  "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
@@ -4936,7 +4918,7 @@ elif architecture_name == 'PAiNN':
                 "class_name": "MoleculeNetDataset",
                 "config": {},
                 "methods": [
-                    {"set_attributes": {}}
+                    {"map_list": {"method": "set_range", "max_distance": 3, "max_neighbours": 10000}}
                 ]
             },
             "data_unit": "mol/L"
@@ -4956,9 +4938,9 @@ elif architecture_name == 'DimeNetPP':
     model_config = {
         "name": "DimeNetPP",
         "inputs": [
-            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None], "name": "node_number", "dtype": "float32", "ragged": True},
             {"shape": [None, 3], "name": "node_coordinates", "dtype": "float32", "ragged": True},
-            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [None, 2], "name": "range_indices", "dtype": "int64", "ragged": True},
             {"shape": [None, 2], "name": "angle_indices", "dtype": "int64", "ragged": True},
             {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         ],
@@ -4973,10 +4955,9 @@ elif architecture_name == 'DimeNetPP':
         "num_before_skip": 1, "num_after_skip": 2, "num_dense_output": 3,
         "num_targets": 128, "extensive": False, "output_init": "zeros",
         "activation": "swish", "verbose": 10,
-        "use_output_mlp": True,
         "output_embedding": "graph",
-        "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
-                     "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+        "output_mlp": {"use_bias": [True, False], "units": [128, 1],
+                     "activation": ["swish", "linear"]}
     }
     
     # Update output dimensions based on config file
@@ -4989,19 +4970,25 @@ elif architecture_name == 'DimeNetPP':
             "config": model_config
         },
         "training": {
-            "fit": {"batch_size": 10, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+            "fit": {"batch_size": 10, "epochs": 872, "validation_freq": 10, "verbose": 2, "callbacks": []
                     },
             "compile": {
-                "optimizer": {"class_name": "Adam",
-                              "config": {"lr": {
-                                  "class_name": "ExponentialDecay",
-                                  "config": {"initial_learning_rate": 0.001,
-                                             "decay_steps": 1600,
-                                             "decay_rate": 0.5, "staircase": False}
-                              }
-                              }
+                "optimizer": {
+                    "class_name": "Addons>MovingAverage", "config": {
+                        "optimizer": {
+                            "class_name": "Adam", "config": {
+                                "learning_rate": {
+                                    "class_name": "kgcnn>LinearWarmupExponentialDecay", "config": {
+                                        "learning_rate": 0.001, "warmup_steps": 30.0, "decay_steps": 40000.0,
+                                        "decay_rate": 0.01
+                                    }
+                                }, "amsgrad": True
+                            }
+                        },
+                        "average_decay": 0.999
+                    }
                 },
-                "loss": loss_function
+                "loss": "mean_absolute_error",
             },
             "cross_validation": {"class_name": "KFold",
                                  "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
@@ -5020,7 +5007,7 @@ elif architecture_name == 'DimeNetPP':
         "info": {
             "postfix": "",
             "postfix_file": "",
-            "kgcnn_version": "3.0.0"
+            "kgcnn_version": "2.0.3"
         }
     }
 
@@ -5146,9 +5133,15 @@ if TRAIN == "True":
     cols = ['Result%s' % (i) for i in range(output_dim)]
     descs = ['desc%s' % (i) for i in range(desc_dim)]
 
+    # Initialize hyper if not defined
+    if 'hyper' not in locals():
+        hyper = None
+
     if len(descs)>0:
         print('There are Additional Descriptors/Conditions')
-        if 'use_graph_state' in hyper["model"]["config"].keys():
+        if 'hyper' not in locals() or hyper is None:
+            print('Warning: hyper not defined, skipping descriptor processing')
+        elif 'use_graph_state' in hyper["model"]["config"].keys():
             print(hyper["model"]["config"]['use_graph_state'])
             hyper["model"]["config"]['use_graph_state']=True
             # For AttentiveFP, ensure we have exactly the right inputs in the right order

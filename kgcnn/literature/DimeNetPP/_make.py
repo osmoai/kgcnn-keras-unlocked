@@ -22,11 +22,11 @@ __model_version__ = "2022.11.25"
 
 model_default = {
     "name": "DimeNetPP",
-    "inputs": [{"shape": [None], "name": "node_attributes", "dtype": "float32", "ragged": True},
+    "inputs": [{"shape": [None], "name": "node_number", "dtype": "float32", "ragged": True},
                {"shape": [None, 3], "name": "node_coordinates", "dtype": "float32", "ragged": True},
-               {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+               {"shape": [None, 2], "name": "range_indices", "dtype": "int64", "ragged": True},
                {"shape": [None, 2], "name": "angle_indices", "dtype": "int64", "ragged": True},
-               {"shape": [None, 2], "name": "graph_descriptors", "dtype": "float32", "ragged": False}],
+               {"shape": [2], "name": "graph_descriptors", "dtype": "float32", "ragged": False}],
     "input_embedding": {"node": {"input_dim": 95, "output_dim": 128,
                                  "embeddings_initializer": {"class_name": "RandomUniform",
                                                             "config": {"minval": -1.7320508075688772,
@@ -125,11 +125,11 @@ def make_model(inputs: list = None,
     input_layers = {}
     
     for i, input_config in enumerate(inputs):
-        input_layers[input_config['name']] = create_input_layer(input_config, i)
+        input_layers[input_config['name']] = create_input_layer(input_config)
     
     # Get descriptor input if present
     graph_descriptors_input = None
-    if check_descriptor_input(input_names):
+    if check_descriptor_input(inputs):
         graph_descriptors_input = input_layers['graph_descriptors']
     
     # ROBUST: Use generalized descriptor processing
@@ -140,9 +140,9 @@ def make_model(inputs: list = None,
     )
     
     # Get main inputs
-    node_input = input_layers['node_attributes']
+    node_input = input_layers['node_number']
     xyz_input = input_layers['node_coordinates']
-    bond_index_input = input_layers['edge_indices']
+    bond_index_input = input_layers['range_indices']
     angle_index_input = input_layers['angle_indices']
 
     # Atom embedding

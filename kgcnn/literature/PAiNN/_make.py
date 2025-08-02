@@ -33,22 +33,20 @@ __model_version__ = "2022.11.25"
 model_default = {
     "name": "PAiNN",
     "inputs": [
-        {"shape": (None,), "name": "node_attributes", "dtype": "float32", "ragged": True},
+        {"shape": (None,), "name": "node_number", "dtype": "float32", "ragged": True},
         {"shape": (None, 3), "name": "node_coordinates", "dtype": "float32", "ragged": True},
-        {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
-        {"shape": (None, 2), "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        {"shape": (None, 2), "name": "range_indices", "dtype": "int64", "ragged": True},
+        {"shape": (2,), "name": "graph_descriptors", "dtype": "float32", "ragged": False}
     ],
     "input_embedding": {"node": {"input_dim": 95, "output_dim": 128}},
     "equiv_initialize_kwargs": {"dim": 3, "method": "zeros"},
     "bessel_basis": {"num_radial": 20, "cutoff": 5.0, "envelope_exponent": 5},
     "pooling_args": {"pooling_method": "sum"},
-    "conv_args": {"units": 128, "cutoff": None, "conv_pool": "sum"},
+    "conv_args": {"units": 128, "cutoff": None},
     "update_args": {"units": 128},
-    "equiv_normalization": False, "node_normalization": False,
     "depth": 3,
     "verbose": 10,
-    "use_graph_state": False,
-    "output_embedding": "graph", "output_to_tensor": True,
+    "output_embedding": "graph",
     "output_mlp": {"use_bias": [True, True], "units": [128, 1], "activation": ["swish", "linear"]}
 }
 
@@ -122,9 +120,9 @@ def make_model(inputs: list = None,
         print(f"✅ Created input layer: {name} at position {i}")
     
     # Extract required inputs
-    node_input = input_layers['node_attributes']
+    node_input = input_layers['node_number']
     xyz_input = input_layers['node_coordinates']
-    bond_index_input = input_layers['edge_indices']
+    bond_index_input = input_layers['range_indices']
     
     # Check for optional descriptor input
     descriptor_result = check_descriptor_input(inputs)
@@ -133,15 +131,13 @@ def make_model(inputs: list = None,
         idx, config = descriptor_result
         graph_descriptors_input = input_layers['graph_descriptors']
 
-    # For PAiNN, we always need to embed node features since they are continuous
-    # Use Dense layer instead of OptionalInputEmbedding for continuous features
-    print(f"🔍 PAiNN: Using Dense layer for node embedding from {inputs[0]['shape']} to {input_embedding['node']['output_dim']}")
-    z = ks.layers.Dense(
-        units=input_embedding['node']['output_dim'],
-        activation='linear',
-        use_bias=True,
-        kernel_initializer='glorot_uniform',
-        bias_initializer='zeros'
+    # For PAiNN, we need to embed node features since they are scalar values
+    # Use Embedding layer for node_number (scalar values)
+    print(f"🔍 PAiNN: Using Embedding layer for node embedding from {inputs[0]['shape']} to {input_embedding['node']['output_dim']}")
+    z = ks.layers.Embedding(
+        input_dim=input_embedding['node']['input_dim'],
+        output_dim=input_embedding['node']['output_dim'],
+        embeddings_initializer='glorot_uniform'
     )(node_input)
 
     # ROBUST: Use generalized descriptor processing
