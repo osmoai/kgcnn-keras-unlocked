@@ -2,7 +2,7 @@ import tensorflow as tf
 from kgcnn.layers.casting import ChangeTensorType
 from kgcnn.layers.gather import GatherNodesOutgoing
 from kgcnn.layers.modules import LazyConcatenate, OptionalInputEmbedding
-from kgcnn.layers.norm import GraphLayerNormalization
+from kgcnn.layers.norm import GraphBatchNormalization
 from kgcnn.layers.mlp import GraphMLP, MLP
 from kgcnn.layers.aggr import PoolingLocalMessages, AggregateLocalEdgesLSTM
 from kgcnn.layers.pooling import PoolingNodes
@@ -142,7 +142,7 @@ def make_model(inputs: list = None,
         nu = LazyConcatenate(**concat_args)([n, nu])  # LazyConcatenate node features with new edge updates
 
         n = GraphMLP(**node_mlp_args)(nu)
-        n = GraphLayerNormalization()(n)  # Normalize
+        n = GraphBatchNormalization()(n)  # Normalize
 
     # Regression layer on output
     if output_embedding == 'graph':

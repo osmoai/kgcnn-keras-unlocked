@@ -188,7 +188,7 @@ def make_model(inputs: list = None,
         v = LazyAdd()([v, dv])
 
         if equiv_normalization:
-            v = GraphLayerNormalization(axis=2)(v)
+            v = GraphBatchNormalization(axis=2)(v)
         if node_normalization:
             z = GraphBatchNormalization(axis=-1)(z)
 
@@ -346,7 +346,7 @@ def make_crystal_model(inputs: list = None,
         v = LazyAdd()([v, dv])
 
         if equiv_normalization:
-            v = GraphLayerNormalization(axis=2)(v)
+            v = GraphBatchNormalization(axis=2)(v)
         if node_normalization:
             z = GraphBatchNormalization(axis=-1)(z)
 
