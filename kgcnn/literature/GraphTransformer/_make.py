@@ -46,7 +46,8 @@ model_default = {
         "dropout": 0.1,
         "attention_dropout": 0.1,
         "use_edge_features": True,
-        "use_positional_encoding": True,
+        # Align with reference core model: do not add external positional encodings
+        "use_positional_encoding": False,
         "positional_encoding_dim": 64,
         "activation": "relu",
         "layer_norm_epsilon": 1e-6
@@ -142,7 +143,7 @@ def make_model(inputs: list = None,
 
     # Generate positional encodings if requested
     positional_encoding = None
-    if transformer_args.get("use_positional_encoding", True):
+    if transformer_args.get("use_positional_encoding", False):
         # Create learnable positional encodings based on node indices
         pos_dim = transformer_args.get("positional_encoding_dim", 64)
         positional_encoding = Dense(pos_dim, activation="linear")(n)
@@ -152,8 +153,7 @@ def make_model(inputs: list = None,
         transformer_inputs = [n, e, edge_index_input]
         if positional_encoding is not None:
             transformer_inputs.append(positional_encoding)
-        if graph_embedding is not None:
-            transformer_inputs.append(graph_embedding)
+        # Align with reference: descriptors are fused only after pooling, not fed into transformer layers
         
         n = GraphTransformerLayer(**transformer_args)(transformer_inputs)
     
