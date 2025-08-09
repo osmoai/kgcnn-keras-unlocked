@@ -53,6 +53,9 @@ model_default = {
         "layer_norm_epsilon": 1e-6
     },
     "depth": 3,
+    # Optional multi-pooling fusion (PNA-like) with learnable concatenation
+    "pooling_concat_methods": None,  # e.g. ["sum", "max", "mean"]
+    "pooling_learnable_fusion": False,
     "use_set2set": True,
     "set2set_args": {
         "channels": 32,
@@ -80,6 +83,8 @@ def make_model(inputs: list = None,
                use_set2set: bool = True,
                set2set_args: dict = None,
                pooling_args: dict = None,
+               pooling_concat_methods: list = None,
+               pooling_learnable_fusion: bool = False,
                output_embedding: str = None,
                output_to_tensor: bool = None,
                output_mlp: dict = None,
@@ -157,15 +162,42 @@ def make_model(inputs: list = None,
         
         n = GraphTransformerLayer(**transformer_args)(transformer_inputs)
     
+    # Helper: learnable fusion layer for pooled vectors (scalar per pooling, sigmoid-activated)
+    class LearnablePoolingScaling(ks.layers.Layer):
+        def __init__(self, num_features: int, **layer_kwargs):
+            super().__init__(**layer_kwargs)
+            self.num_features = int(num_features)
+            # Initialize with ones similar to notebook
+            self.scaling_params = self.add_weight(
+                name="pooling_scalars",
+                shape=(self.num_features,),
+                initializer=ks.initializers.Ones(),
+                trainable=True,
+            )
+
+        def call(self, pooled_vectors: list):
+            # pooled_vectors: list of tensors [batch, F]
+            sig = tf.nn.sigmoid(self.scaling_params)  # [K]
+            scaled = [v * sig[i] for i, v in enumerate(pooled_vectors)]
+            return tf.concat(scaled, axis=-1)
+
     # Output embedding choice
     if output_embedding == 'graph':
-        if use_set2set:
-            out = PoolingSet2SetEncoder(**set2set_args)(n)
-            # Set2Set can create extra dimensions, ensure proper shape for fusion
-            if len(out.shape) == 3 and out.shape[1] == 1:
-                out = tf.keras.layers.Lambda(lambda x: tf.squeeze(x, axis=1))(out)
+        if pooling_concat_methods:
+            # Build multiple poolings and concatenate (optionally with learnable fusion)
+            pooled_list = [PoolingNodes(pooling_method=m)(n) for m in pooling_concat_methods]
+            if pooling_learnable_fusion and len(pooled_list) > 1:
+                out = LearnablePoolingScaling(len(pooled_list), name="learnable_pooling_fusion")(pooled_list)
+            else:
+                out = tf.concat(pooled_list, axis=-1)
         else:
-            out = PoolingNodes(**pooling_args)(n)
+            if use_set2set:
+                out = PoolingSet2SetEncoder(**set2set_args)(n)
+                # Set2Set can create extra dimensions, ensure proper shape for fusion
+                if len(out.shape) == 3 and out.shape[1] == 1:
+                    out = tf.keras.layers.Lambda(lambda x: tf.squeeze(x, axis=1))(out)
+            else:
+                out = PoolingNodes(**pooling_args)(n)
         
         # ROBUST: Use generalized descriptor fusion
         out = fuse_descriptors_with_output(out, graph_embedding, fusion_method="concatenate")
