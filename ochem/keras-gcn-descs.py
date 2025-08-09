@@ -1830,15 +1830,19 @@ elif architecture_name == 'GraphTransformer':
             "dropout": 0.1,
             "attention_dropout": 0.1,
             "use_edge_features": True,
-            "use_positional_encoding": True,
+            # Align with reference: disable external positional encodings by default
+            "use_positional_encoding": False,
             "positional_encoding_dim": 64,
             "activation": "relu",
             "layer_norm_epsilon": 1e-6
         },
         "depth": 4,
-        "use_set2set": True,
+        # Enable PNA-like multi-pooling with learnable fusion
+        "pooling_concat_methods": ["sum", "max", "mean"],
+        "pooling_learnable_fusion": True,
+        "use_set2set": False,
         "set2set_args": {"channels": 32, "T": 3, "pooling_method": "sum", "init_qstar": "0"},
-        "pooling_args": {"pooling_method": "segment_sum"},
+        "pooling_args": {"pooling_method": "sum"},
         "output_embedding": "graph",
         "output_to_tensor": True,
         "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
