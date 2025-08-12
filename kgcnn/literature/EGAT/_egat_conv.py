@@ -9,7 +9,7 @@ from kgcnn.ops.segment import segment_softmax
 
 # Keep track of model version from commit date in literature.
 # To be updated if model is changed in a significant way.
-__model_version__ = "2024.01.15"
+__model_version__ = "2025.08.12"
 
 ks = tf.keras
 
