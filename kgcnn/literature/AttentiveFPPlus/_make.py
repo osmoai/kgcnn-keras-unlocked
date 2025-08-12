@@ -3,6 +3,7 @@ from kgcnn.layers.casting import ChangeTensorType
 from ._attentivefpplus_conv import AttentiveHeadFPPlus, PoolingNodesAttentivePlus
 from kgcnn.layers.update import GRUUpdate
 from kgcnn.layers.modules import Dense, Dropout, OptionalInputEmbedding
+from kgcnn.layers import RMSNormalization
 from kgcnn.layers.mlp import GraphMLP, MLP
 from kgcnn.model.utils import update_model_kwargs
 
@@ -22,7 +23,8 @@ model_default = {
     "name": "AttentiveFPPlus",
     "inputs": [{"shape": (None,), "name": "node_attributes", "dtype": "float32", "ragged": True},
                {"shape": (None,), "name": "edge_attributes", "dtype": "float32", "ragged": True},
-               {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True}],
+               {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
+               {"shape": (None, 32), "name": "graph_descriptors", "dtype": "float32", "ragged": False}],
     "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
                         "edge": {"input_dim": 5, "output_dim": 128}},
     "attention_args": {"units": 256, "use_multiscale": True, "scale_fusion": "weighted_sum", "attention_scales": [1, 2, 4]},
@@ -31,6 +33,8 @@ model_default = {
     "dropout": 0.2,
     "verbose": 10,
     "use_graph_state": False,
+    "use_rms_norm": True,
+    "rms_norm_args": {"epsilon": 1e-6, "scale": True, "center": False},
     "output_embedding": "graph", "output_to_tensor": True,
     "output_mlp": {"use_bias": [True, True, True], "units": [256, 128, 1],
                    "activation": ["relu", "relu", "linear"]}
@@ -49,7 +53,9 @@ def make_model(inputs: list = None,
                use_graph_state: bool = False,
                output_embedding: str = None,
                output_to_tensor: bool = None,
-               output_mlp: dict = None
+               output_mlp: dict = None,
+               use_rms_norm: bool = None,
+               rms_norm_args: dict = None
                ):
     r"""Make `AttentiveFPPlus` graph network via functional API.
     Default parameters can be found in :obj:`kgcnn.literature.AttentiveFPPlus.model_default`.
@@ -147,6 +153,10 @@ def make_model(inputs: list = None,
             if dropout > 0:
                 n = Dropout(dropout)(n)
     
+    if use_rms_norm:
+        n = RMSNormalization(**rms_norm_args)(n)
+        print(f"🔧 Applied RMS normalization to AttentiveFPPlus")
+
     # ROBUST: Use generalized descriptor fusion
     out = fuse_descriptors_with_output(n, graph_embedding, fusion_method="concatenate")
 

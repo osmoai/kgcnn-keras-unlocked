@@ -1,6 +1,7 @@
 import tensorflow as tf
 from kgcnn.layers.casting import ChangeTensorType
 from kgcnn.layers.modules import Dense, Dropout, OptionalInputEmbedding
+from kgcnn.layers import RMSNormalization
 from kgcnn.layers.mlp import GraphMLP, MLP
 from kgcnn.layers.pooling import PoolingNodes
 from ._egat_conv import EGATLayer, PoolingNodesEGAT
@@ -39,6 +40,8 @@ model_default = {
     "depth": 4,
     "verbose": 10,
     "use_graph_state": False,
+    "use_rms_norm": False,  # Enable RMS normalization
+    "rms_norm_args": {"epsilon": 1e-6, "scale": True, "center": False},
     "output_embedding": "graph", "output_to_tensor": True,
     "output_mlp": {"use_bias": [True, True, True], "units": [128, 64, 1],
                    "activation": ["relu", "relu", "linear"]}
@@ -55,6 +58,8 @@ def make_model(inputs: list = None,
                output_embedding: str = None,
                output_to_tensor: bool = None,
                output_mlp: dict = None,
+               use_rms_norm: bool = None,
+               rms_norm_args: dict = None,
                name: str = None
                ):
     r"""Make `EGAT` graph network via functional API.
@@ -136,6 +141,11 @@ def make_model(inputs: list = None,
         out = n
     else:
         raise ValueError("Unsupported output embedding for mode %s" % output_embedding)
+
+    # Pre-output MLP RMS normalization (only place we apply it)
+    if use_rms_norm:
+        out = RMSNormalization(**rms_norm_args)(out)
+        print(f"🔧 Applied pre-output MLP RMS normalization to EGAT")
 
     # Output MLP
     out = MLP(**output_mlp)(out)

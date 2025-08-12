@@ -115,17 +115,15 @@ class DGATLayer(ks.layers.Layer):
         )
         
         # Backward attention (target → source)
-        if edge_indices_reverse is not None:
-            backward_output = self.backward_attention(
-                [node_features_transformed, edge_features_transformed, edge_indices_reverse]
-            )
-        else:
-            # If no reverse edges, use the same edge indices but swap source/target
-            # This creates a "reverse" effect by swapping the attention direction
-            edge_indices_reverse_implied = tf.stack([edge_indices[:, :, 1], edge_indices[:, :, 0]], axis=-1)
-            backward_output = self.backward_attention(
-                [node_features_transformed, edge_features_transformed, edge_indices_reverse_implied]
-            )
+        # For now, we'll use the implied reverse approach which is more robust
+        # This creates a "reverse" effect by swapping source/target in edge_indices
+        edge_indices_reverse_implied = tf.ragged.map_flat_values(
+            lambda x: tf.stack([x[:, 1], x[:, 0]], axis=1),
+            edge_indices
+        )
+        backward_output = self.backward_attention(
+            [node_features_transformed, edge_features_transformed, edge_indices_reverse_implied]
+        )
         
         # Combine forward and backward attention outputs
         if self.attention_heads > 1:
@@ -143,8 +141,8 @@ class DGATLayer(ks.layers.Layer):
             output = output + node_features
         else:
             # If dimensions don't match, project input to match
-            input_projection = Dense(units=self.units, use_bias=False)(node_features)
-            output = output + input_projection
+            # Use the pre-computed node transformation for consistency
+            output = output + node_features_transformed
         
         # Layer normalization
         output = self.layer_norm(output)
