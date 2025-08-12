@@ -4,8 +4,10 @@ from ._attentivefp_conv import AttentiveHeadFP, PoolingNodesAttentive
 from kgcnn.layers.update import GRUUpdate
 from kgcnn.layers.modules import Dense, Dropout, OptionalInputEmbedding
 from kgcnn.layers.mlp import GraphMLP, MLP
+from kgcnn.layers.gather import GatherState
+from kgcnn.layers.modules import LazyConcatenate
 from kgcnn.model.utils import update_model_kwargs
-
+from kgcnn.layers.norm import RMSNormalization
 # Keep track of model version from commit date in literature.
 # To be updated if model is changed in a significant way.
 __model_version__ = "2022.11.25"
@@ -35,6 +37,8 @@ model_default = {
     "dropout": 0.1,
     "verbose": 10,
     "use_graph_state": False,
+    "use_rms_norm": False,  # New option for RMS normalization
+    "rms_norm_args": {"epsilon": 1e-6, "scale": True},  # RMS normalization parameters
     "output_embedding": "graph", "output_to_tensor": True,
     "output_mlp": {"use_bias": [True, True, False], "units": [25, 10, 1],
                    "activation": ["relu", "relu", "sigmoid"]}
@@ -51,6 +55,8 @@ def make_model(inputs: list = None,
                name: str = None,
                verbose: int = None,
                use_graph_state: bool = False,
+               use_rms_norm: bool = False,  # New parameter for RMS normalization
+               rms_norm_args: dict = None,  # New parameter for RMS normalization arguments
                output_embedding: str = None,
                output_to_tensor: bool = None,
                output_mlp: dict = None
@@ -96,6 +102,7 @@ def make_model(inputs: list = None,
         check_descriptor_input, create_descriptor_processing_layer,
         fuse_descriptors_with_output, build_model_inputs
     )
+    
 
     # ROBUST: Use generalized input handling
     input_names = get_input_names(inputs)
@@ -145,6 +152,10 @@ def make_model(inputs: list = None,
         nk = Dropout(rate=dropout)(nk)
     n = nk
 
+    # Apply RMS normalization if enabled
+    if use_rms_norm:
+        n = RMSNormalization(**rms_norm_args)(n)
+
     # Output embedding choice
     if output_embedding == 'graph':
         out = PoolingNodesAttentive(units=attention_args['units'], depth=depthmol)(n)  # Tensor output.
@@ -179,6 +190,8 @@ def make_contrastive_attentivefp_model(inputs: list = None,
                                       name: str = None,
                                       verbose: int = None,
                                       use_graph_state: bool = False,
+                                      use_rms_norm: bool = False,  # New parameter for RMS normalization
+                                      rms_norm_args: dict = None,  # New parameter for RMS normalization arguments
                                       output_embedding: str = None,
                                       output_to_tensor: bool = None,
                                       output_mlp: dict = None

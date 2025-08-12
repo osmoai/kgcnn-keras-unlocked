@@ -8,6 +8,7 @@ from kgcnn.layers.aggr import AggregateLocalEdges
 from ...layers.pooling import PoolingNodes
 from ._dmpnn_conv import DMPNNPPoolingEdgesDirected
 from kgcnn.model.utils import update_model_kwargs
+from kgcnn.layers import RMSNormalization
 
 # Import the generalized input handling utilities
 from kgcnn.utils.input_utils import (
@@ -46,6 +47,8 @@ model_default = {
     "edge_activation": {"activation": "relu"},
     "node_dense": {"units": 128, "use_bias": True, "activation": "relu"},
     "verbose": 10, "depth": 5, "dropout": {"rate": 0.1},
+    "use_rms_norm": False,  # Enable RMS normalization
+    "rms_norm_args": {"epsilon": 1e-6, "scale": True, "center": False},
     "output_embedding": "graph", "output_to_tensor": True,
     "output_mlp": {"use_bias": [True, True, False], "units": [64, 32, 1],
                    "activation": ["relu", "relu", "linear"]}
@@ -67,7 +70,9 @@ def make_model(name: str = None,
                use_graph_state: bool = False,
                output_embedding: str = None,
                output_to_tensor: bool = None,
-               output_mlp: dict = None
+               output_mlp: dict = None,
+               use_rms_norm: bool = None,
+               rms_norm_args: dict = None
                ):
     r"""Make `DMPNN <https://pubs.acs.org/doi/full/10.1021/acs.jcim.9b00237>`_ graph network via functional API.
     Default parameters can be found in :obj:`kgcnn.literature.DMPNN.model_default`.
@@ -138,6 +143,11 @@ def make_model(name: str = None,
     h_n0 = GatherNodesOutgoing()([n, edi])
     h0 = LazyConcatenate(axis=-1)([h_n0, ed])
     h0 = Dense(**edge_initialize)(h0)
+    
+    # Pre-DMPNN normalization (stabilizes initial edge features)
+    if use_rms_norm:
+        h0 = RMSNormalization(**rms_norm_args)(h0)
+        print(f"🔧 Applied pre-DMPNN RMS normalization to initial edge features")
 
     # One Dense layer for all message steps
     edge_dense_all = Dense(**edge_dense)  # Should be linear activation
@@ -145,23 +155,57 @@ def make_model(name: str = None,
     # Model Loop
     h = h0
     for i in range(depth):
+        # Pre-message normalization (stabilizes message passing)
+        if use_rms_norm:
+            h = RMSNormalization(**rms_norm_args)(h)
+            print(f"🔧 Applied pre-message RMS normalization to DMPNN layer {i+1}")
+        
         m_vw = DMPNNPPoolingEdgesDirected()([n, h, edi, ed_pairs])
         h = edge_dense_all(m_vw)
         h = LazyAdd()([h, h0])
         h = Activation(**edge_activation)(h)
+        
+        # Post-message normalization (stabilizes features)
+        if use_rms_norm:
+            h = RMSNormalization(**rms_norm_args)(h)
+            print(f"🔧 Applied post-message RMS normalization to DMPNN layer {i+1}")
+        
         if dropout is not None:
             h = Dropout(**dropout)(h)
 
     mv = AggregateLocalEdges(**pooling_args)([n, h, edi])
     mv = LazyConcatenate(axis=-1)([mv, n])
+    
+    # Pre-node dense normalization (stabilizes node features)
+    if use_rms_norm:
+        mv = RMSNormalization(**rms_norm_args)(mv)
+        print(f"🔧 Applied pre-node dense RMS normalization")
+    
     hv = Dense(**node_dense)(mv)
 
     # Output embedding choice
     n = hv
     if output_embedding == 'graph':
+        # Pre-pooling normalization (stabilizes pooling operation)
+        if use_rms_norm:
+            n = RMSNormalization(**rms_norm_args)(n)
+            print(f"🔧 Applied pre-pooling RMS normalization")
+        
         out = PoolingNodes(**pooling_args)(n)
+        
+        # Pre-descriptor fusion normalization
+        if use_rms_norm:
+            out = RMSNormalization(**rms_norm_args)(out)
+            print(f"🔧 Applied pre-descriptor fusion RMS normalization to DMPNN")
+        
         # ROBUST: Use generalized descriptor fusion
         out = fuse_descriptors_with_output(out, graph_state, fusion_method="concatenate")
+        
+        # Pre-MLP normalization
+        if use_rms_norm:
+            out = RMSNormalization(**rms_norm_args)(out)
+            print(f"🔧 Applied pre-MLP RMS normalization to DMPNN")
+        
         out = MLP(**output_mlp)(out)
     elif output_embedding == 'node':
         if use_graph_state:

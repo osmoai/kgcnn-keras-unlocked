@@ -10,6 +10,7 @@ from ...layers.pooling import PoolingNodes
 from kgcnn.layers.set2set import PoolingSet2SetEncoder
 from kgcnn.model.utils import update_model_kwargs
 from kgcnn.layers.geom import NodePosition, NodeDistanceEuclidean, GaussBasisLayer, ShiftPeriodicLattice
+from kgcnn.layers import RMSNormalization
 
 # Import the generalized input handling utilities
 from kgcnn.utils.input_utils import (
@@ -60,7 +61,9 @@ def make_model(inputs: list = None,
                use_graph_state: bool = False,
                output_embedding: str = None,
                output_to_tensor: bool = None,
-               output_mlp: dict = None
+               output_mlp: dict = None,
+               use_rms_norm: bool = None,
+               rms_norm_args: dict = None
                ):
     r"""Make `NMPN <http://arxiv.org/abs/1704.01212>`_ graph network via functional API.
     Default parameters can be found in :obj:`kgcnn.literature.NMPN.model_default`.
@@ -189,6 +192,12 @@ def make_model(inputs: list = None,
         out = ks.layers.Flatten()(out)  # Flatten() required for to Set2Set output.
         # ROBUST: Use generalized descriptor fusion
         out = fuse_descriptors_with_output(out, graph_descriptors, fusion_method="concatenate")
+        
+        # Pre-output MLP RMS normalization (only place we apply it)
+        if use_rms_norm:
+            out = RMSNormalization(**rms_norm_args)(out)
+            print(f"🔧 Applied pre-output MLP RMS normalization to NMPN")
+        
         out = MLP(**output_mlp)(out)
     elif output_embedding == 'node':
         if graph_descriptors is not None:
@@ -225,6 +234,8 @@ model_crystal_default = {
     "output_embedding": 'graph', "output_to_tensor": True,
     "output_mlp": {"use_bias": [True, True, False], "units": [25, 10, 1],
                    "activation": ["selu", "selu", "sigmoid"]},
+    "use_rms_norm": False,  # Enable RMS normalization
+    "rms_norm_args": {"epsilon": 1e-6, "scale": True, "center": False},
 }
 
 
@@ -246,8 +257,10 @@ def make_crystal_model(inputs: list = None,
                        use_graph_state: bool = False,
                        output_embedding: str = None,
                        output_to_tensor: bool = None,
-                       output_mlp: dict = None
-                       ):
+                                       output_mlp: dict = None,
+                use_rms_norm: bool = None,
+                rms_norm_args: dict = None
+                ):
     r"""Make `NMPN <http://arxiv.org/abs/1704.01212>`_ graph network via functional API.
     Default parameters can be found in :obj:`kgcnn.literature.NMPN.model_crystal_default`.
 

@@ -6,6 +6,7 @@ from kgcnn.layers.mlp import GraphMLP, MLP
 from ...layers.pooling import PoolingNodes
 from kgcnn.model.utils import update_model_kwargs
 from kgcnn.layers.gather import GatherState
+from kgcnn.layers import RMSNormalization
 
 # Import the generalized input handling utilities
 from kgcnn.utils.input_utils import (
@@ -35,6 +36,8 @@ model_default = {
     "gin_args": {},
     "use_graph_state": False,
     "depth": 3, "dropout": 0.0, "verbose": 10,
+    "use_rms_norm": False,  # Enable RMS normalization
+    "rms_norm_args": {"epsilon": 1e-6, "scale": True, "center": False},
     "last_mlp": {"use_bias": [True, True, True], "units": [64, 64, 64],
                  "activation": ["relu", "relu", "linear"]},
     "output_embedding": 'graph', "output_to_tensor": True,
@@ -56,7 +59,9 @@ def make_model(inputs: list = None,
                use_graph_state: bool = False,
                output_embedding: str = None,
                output_to_tensor: bool = None,
-               output_mlp: dict = None
+               output_mlp: dict = None,
+               use_rms_norm: bool = None,
+               rms_norm_args: dict = None
                ):
     r"""Make `GIN <https://arxiv.org/abs/1810.00826>`_ graph network via functional API.
     Default parameters can be found in :obj:`kgcnn.literature.GIN.model_default`.
@@ -123,18 +128,32 @@ def make_model(inputs: list = None,
     edi = edge_index_input
     n_units = gin_mlp["units"][-1] if isinstance(gin_mlp["units"], list) else int(gin_mlp["units"])
     n = Dense(n_units, use_bias=True, activation='linear')(n)
+    
+
+    
     list_embeddings = [n]
     for i in range(0, depth):
+        
         n = GIN(**gin_args)([n, edi])
         n = GraphMLP(**gin_mlp)(n)
+        
         list_embeddings.append(n)
+        
     if output_embedding == "graph":
+        
         out = [PoolingNodes()(x) for x in list_embeddings]
         out = [MLP(**last_mlp)(x) for x in out]
         out = [ks.layers.Dropout(dropout)(x) for x in out]
         out = ks.layers.Add()(out)
+        
         # ROBUST: Use generalized descriptor fusion
         out = fuse_descriptors_with_output(out, graph_descriptors, fusion_method="concatenate")
+        
+        # Pre-output MLP RMS normalization (only place we apply it)
+        if use_rms_norm:
+            out = RMSNormalization(**rms_norm_args)(out)
+            print(f"🔧 Applied pre-output MLP RMS normalization")
+        
         out = MLP(**output_mlp)(out)
     elif output_embedding == "node":
         out = n
@@ -165,6 +184,8 @@ model_default_edge = {
                 "use_normalization": True, "normalization_technique": "graph_batch"},
     "gin_args": {"epsilon_learnable": False},
     "depth": 3, "dropout": 0.0, "verbose": 10,
+    "use_rms_norm": False,  # Enable RMS normalization
+    "rms_norm_args": {"epsilon": 1e-6, "scale": True, "center": False},
     "use_graph_state": False,
     "last_mlp": {"use_bias": [True, True, True], "units": [64, 64, 64],
                  "activation": ["relu", "relu", "linear"]},
@@ -187,7 +208,9 @@ def make_model_edge(inputs: list = None,
                     use_graph_state: bool = False,
                     output_embedding: str = None,
                     output_to_tensor: bool = None,
-                    output_mlp: dict = None
+                    output_mlp: dict = None,
+                    use_rms_norm: bool = None,
+                    rms_norm_args: dict = None
                     ):
     r"""Make `GINE <https://arxiv.org/abs/1905.12265>`_ graph network via functional API.
     Default parameters can be found in :obj:`kgcnn.literature.GIN.model_default_edge`.
@@ -262,17 +285,35 @@ def make_model_edge(inputs: list = None,
     ed = Dense(n_units, use_bias=True, activation='linear')(ed)
     list_embeddings = [n]
     for i in range(0, depth):
+
+        
         n = GINE(**gin_args)([n, edi, ed])
         n = GraphMLP(**gin_mlp)(n)
+        
+
+        
         list_embeddings.append(n)
+
     if output_embedding == "graph":
+
+        
         out = [PoolingNodes()(x) for x in list_embeddings]
         out = [MLP(**last_mlp)(x) for x in out]
         out = [ks.layers.Dropout(dropout)(x) for x in out]
         out = ks.layers.Add()(out)
+        
+        # Pre-descriptor fusion normalization
+
         # ROBUST: Use generalized descriptor fusion for GINE
         out = fuse_descriptors_with_output(out, graph_descriptors, fusion_method="concatenate")
+        
+        # Pre-MLP normalization
+        if use_rms_norm:
+            out = RMSNormalization(**rms_norm_args)(out)
+            print(f"🔧 Applied pre-MLP RMS normalization to GIN")
+        
         out = MLP(**output_mlp)(out)
+
     elif output_embedding == "node":
         out = n
         out = GraphMLP(**last_mlp)(out)
