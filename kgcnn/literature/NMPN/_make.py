@@ -4,6 +4,7 @@ from ._mpnn_conv import TrafoEdgeNetMessages, MatMulMessages
 from kgcnn.layers.update import GRUUpdate
 from kgcnn.layers.gather import GatherNodesOutgoing, GatherNodesIngoing
 from kgcnn.layers.modules import Dense, LazyConcatenate, OptionalInputEmbedding
+from kgcnn.layers.geom import NodePosition, NodeDistanceEuclidean, GaussBasisLayer
 from kgcnn.layers.mlp import GraphMLP, MLP
 from kgcnn.layers.aggr import AggregateLocalEdges
 from ...layers.pooling import PoolingNodes
@@ -267,9 +268,9 @@ def make_crystal_model(inputs: list = None,
                        use_graph_state: bool = False,
                        output_embedding: str = None,
                        output_to_tensor: bool = None,
-                                       output_mlp: dict = None,
-                use_rms_norm: bool = None,
-                rms_norm_args: dict = None
+                       output_mlp: dict = None,
+                       use_rms_norm: bool = None,
+                       rms_norm_args: dict = None
                 ):
     r"""Make `NMPN <http://arxiv.org/abs/1704.01212>`_ graph network via functional API.
     Default parameters can be found in :obj:`kgcnn.literature.NMPN.model_crystal_default`.
@@ -333,7 +334,7 @@ def make_crystal_model(inputs: list = None,
     
     # Extract required inputs
     node_input = input_layers['node_attributes']
-    edge_input = input_layers['edge_number']  # NMPN uses edge_number instead of edge_attributes
+    edge_input = input_layers['edge_attributes']  # NMPN uses edge_attributes
     edge_index_input = input_layers['edge_indices']
     edge_image = input_layers['edge_image']
     lattice = input_layers['lattice']
