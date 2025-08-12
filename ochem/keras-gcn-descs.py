@@ -371,7 +371,7 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
 
             dataset.read_in_memory(label_column_name=labelcols, add_hydrogen=False,
                                has_conformers=False)
-            if len(descs)>0:
+            if descs and len(descs)>0:
                 print('Adding the graph_attributes from csv file!')
                 # Use graph_descriptors for all models (standardized naming)
                 callback_name = "graph_descriptors"
@@ -400,7 +400,7 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
         dataset.read_in_memory(label_column_name=labelcols, add_hydrogen=False,
                                has_conformers=False)
                                
-        if len(descs)>0:
+        if descs and len(descs)>0:
                 print('Adding the graph_attributes from csv file!')
                 # Use graph_descriptors for all models (standardized naming)
                 callback_name = "graph_descriptors"
@@ -418,7 +418,7 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
         dataset.set_methods(hyper_dict["data"]["dataset"]["methods"])
 
     # Generate edge_indices_reverse for directed models
-    if modelname in ['MultiChem', 'DMPNN', 'DMPNNAttention', 'DGIN', 'EGAT', 'TransformerGAT', 'DHTNN', 'DHTNNPlus']:
+    if modelname in ['MultiChem', 'DMPNN', 'DMPNNAttention', 'DGIN', 'EGAT', 'TransformerGAT', 'DHTNN', 'DHTNNPlus', 'DGAT', 'DAttFP']:
         print(f"Generating edge_indices_reverse for {modelname} model...")
         import numpy as np
         for graph in dataset:
@@ -503,6 +503,7 @@ desc_dim = int(getConfig("Details", "desc_dim", 0));
 # Descriptor parameters
 use_descriptors = strtobool(getConfig("Details", "use_descriptors", "False"));
 descriptor_columns = getConfig("Details", "descriptor_columns", "");
+use_rms_norm = strtobool(getConfig("Details", "use_rms_norm", "False"));
 descs = None
 if use_descriptors and descriptor_columns:
     descs = [col.strip() for col in descriptor_columns.split(',')]
@@ -953,6 +954,8 @@ elif architecture_name in ['AttFP', 'AttentiveFP']:
                 "depthato": 2, 
                 "depthmol": 2,
                 "dropout": 0.2,
+                "use_rms_norm": use_rms_norm,  # Enable RMS normalization
+                "rms_norm_args": {"epsilon": 1e-6, "scale": True, "center": False},
                 "verbose": 10,
                 "output_embedding": "graph",
                 "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
@@ -1000,7 +1003,7 @@ elif architecture_name in ['AttFP', 'AttentiveFP']:
         hyper["model"]["config"]["use_graph_state"] = True
     
     # Handle descriptors for AttentiveFP - only add if not already added
-    if len(descs)>0:
+    if descs and len(descs)>0:
         print('There are Additional Descriptors/Conditions')
         if 'use_graph_state' in hyper["model"]["config"].keys():
             print(hyper["model"]["config"]['use_graph_state'])
@@ -1110,6 +1113,9 @@ elif architecture_name == 'AttentiveFPPlus':
                 "attention_args": {"units": 256, "use_multiscale": True, "scale_fusion": "weighted_sum", "attention_scales": [1, 2, 4]},  # Multi-scale attention
                 "depthato": 4,  # Increased depth for multi-scale
                 "depthmol": 4,  # Increased depth for multi-scale
+                "use_rms_norm": use_rms_norm,  # Enable RMS normalization
+                "rms_norm_args": {"epsilon": 1e-6, "scale": True, "center": False},
+                "use_graph_state": True,
                 "dropout": 0.2,
                 "verbose": 10,
                 "output_embedding": "graph",
@@ -1143,7 +1149,8 @@ elif architecture_name == 'AttentiveFPPlus':
                 "class_name": "MoleculeNetDataset",
                 "config": {},
                 "methods": [
-                    {"set_attributes": {}}
+                    {"set_attributes": {}},
+                    {"map_list": {"method": "set_edge_indices_reverse"}}
                 ]
             },
             "data_unit": "mol/L"
@@ -1340,6 +1347,8 @@ elif architecture_name in ['NMPN','MPNN']:
                 'edge_mlp': {'use_bias': True, 'activation': 'swish', "units": [64, 64]},
                 'use_set2set': True, 'depth': 3, 'node_dim': 128,
                 "geometric_edge": False, "make_distance": False, "expand_distance": False,
+                'use_rms_norm': use_rms_norm,  # Enable RMS normalization
+                'rms_norm_args': {"epsilon": 1e-6, "scale": True, "center": False},
                 'verbose': 10,
                 'output_embedding': 'graph',
                 'output_mlp': {"use_bias": [True, True, False], "units": [200, 100, output_dim],
@@ -1947,6 +1956,8 @@ elif architecture_name in ['ChemProp', 'DMPNN']:
         "node_dense": {"units": 200, "use_bias": True, "activation": "relu"},
         "verbose": 10, "depth": 5,
         "dropout": {"rate": 0.2},
+        "use_rms_norm": use_rms_norm,  # Enable RMS normalization
+        "rms_norm_args": {"epsilon": 1e-6, "scale": True, "center": False},
         "output_embedding": "graph",
         "output_mlp": {
             "use_bias": [True, True, False], "units": [200, 100, output_dim],
@@ -2216,7 +2227,9 @@ elif architecture_name == 'GIN':
         "depth": 4,
         "dropout": 0.1,
         "gin_mlp": {"units": [100, 100], "use_bias": True, "activation": ["relu", "relu"],
-                    "use_normalization": True, "normalization_technique": "graph_batch"},
+                    "use_normalization": False, "normalization_technique": "graph_batch"},
+        "use_rms_norm": use_rms_norm,  # Enable RMS normalization
+        "rms_norm_args": {"epsilon": 1e-6, "scale": True, "center": False},
         "gin_args": {},
         "last_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
                      "activation": ["kgcnn>leaky_relu", "selu", "linear"]},
@@ -2278,8 +2291,10 @@ elif architecture_name == 'GINE':
         "depth": 4,
         "dropout": 0.1,
         "gin_mlp": {"units": [100, 100], "use_bias": True, "activation": ["relu", "relu"],
-                    "use_normalization": True, "normalization_technique": "graph_batch"},
+                    "use_normalization": False, "normalization_technique": "graph_batch"},
         "gin_args": {},
+        "use_rms_norm": use_rms_norm,  # Enable RMS normalization
+        "rms_norm_args": {"epsilon": 1e-6, "scale": True, "center": False},
         "last_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
                      "activation": ["kgcnn>leaky_relu", "selu", "linear"]},
         "output_embedding": "graph",
@@ -2586,6 +2601,8 @@ elif architecture_name == 'EGAT':
                 "depth": 4,
                 "verbose": 10,
                 "use_graph_state": True,
+                "use_rms_norm": use_rms_norm,  # Enable RMS normalization
+                "rms_norm_args": {"epsilon": 1e-6, "scale": True, "center": False},
                 "output_embedding": "graph",
                 "output_to_tensor": True,
                 "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
@@ -2660,6 +2677,8 @@ elif architecture_name == 'TransformerGAT':
                 "depth": 4,
                 "verbose": 10,
                 "use_graph_state": True,
+                "use_rms_norm": use_rms_norm,  # Enable RMS normalization
+                "rms_norm_args": {"epsilon": 1e-6, "scale": True, "center": False},
                 "output_embedding": "graph",
                 "output_to_tensor": True,
                 "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
@@ -2715,6 +2734,160 @@ elif architecture_name == 'TransformerGAT':
                 {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
             )
             print(f"Added descriptor input with dimension {desc_dim} to TransformerGAT")
+        hyper["model"]["config"]["use_graph_state"] = True
+
+# DGAT (Directed Graph Attention Network) - Direction-aware attention with forward/backward mechanisms
+elif architecture_name == 'DGAT':
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.DGAT",
+            "config": {
+                "name": "DGAT",
+                "inputs": [
+                    {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+                    {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+                ],
+                "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
+                                    "edge": {"input_dim": 5, "output_dim": 128},
+                                    "graph": {"input_dim": 100, "output_dim": 64}},
+                "dgat_args": {"units": 128, "use_bias": True, "activation": "relu",
+                              "attention_heads": 8, "attention_units": 64, "use_edge_features": True,
+                              "dropout_rate": 0.1},
+                "depth": 4,
+                "verbose": 10,
+                "use_graph_state": True,
+                "use_rms_norm": use_rms_norm,  # Enable RMS normalization
+                "rms_norm_args": {"epsilon": 1e-6, "scale": True, "center": False},
+                "output_embedding": "graph",
+                "output_to_tensor": True,
+                "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
+                               "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+            }
+        },
+        "training": {
+            "fit": {
+                "batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2,
+                "callbacks": [
+                    {
+                        "class_name": "kgcnn>LinearLearningRateScheduler", "config": {
+                            "learning_rate_start": 0.001, "learning_rate_stop": 1e-05, "epo_min": 100, "epo": 200,
+                            "verbose": 0
+                        }
+                    }
+                ]
+            },
+            "compile": {
+                "optimizer": {"class_name": "Addons>AdamW", "config": {"lr": 0.001,
+                                                                       "weight_decay": 1e-05}
+                              }
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+            "execute_folds": 1
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "kgcnn_version": "2.0.3"
+        }
+    }
+    if use_descriptors and descs:
+        input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
+        if 'graph_descriptors' not in input_names:
+            hyper["model"]["config"]["inputs"].append(
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+            )
+            print(f"Added descriptor input with dimension {desc_dim} to DGAT")
+        hyper["model"]["config"]["use_graph_state"] = True
+
+# DAttFP (Directed AttentiveFP) - Novel combination of AttentiveFP attention with direction awareness
+elif architecture_name == 'DAttFP':
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.DAttFP",
+            "config": {
+                "name": "DAttFP",
+                "inputs": [
+                    {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+                    {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+                ],
+                "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
+                                    "edge": {"input_dim": 5, "output_dim": 128},
+                                    "graph": {"input_dim": 100, "output_dim": 64}},
+                "dattfp_args": {"units": 128, "use_bias": True, "activation": "relu",
+                                "attention_heads": 8, "attention_units": 64, "use_edge_features": True,
+                                "dropout_rate": 0.1, "use_gru_update": True},
+                "depth": 4,
+                "verbose": 10,
+                "use_graph_state": True,
+                "use_rms_norm": use_rms_norm,  # Enable RMS normalization
+                "rms_norm_args": {"epsilon": 1e-6, "scale": True, "center": False},
+                "output_embedding": "graph",
+                "output_to_tensor": True,
+                "output_mlp": {"use_bias": [True, True, True], "units": [200, 100, output_dim],
+                               "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+            }
+        },
+        "training": {
+            "fit": {
+                "batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2,
+                "callbacks": [
+                    {
+                        "class_name": "kgcnn>LinearLearningRateScheduler", "config": {
+                            "learning_rate_start": 0.001, "learning_rate_stop": 1e-05, "epo_min": 100, "epo": 200,
+                            "verbose": 0
+                        }
+                    }
+                ]
+            },
+            "compile": {
+                "optimizer": {"class_name": "Addons>AdamW", "config": {"lr": 0.001,
+                                                                       "weight_decay": 1e-05}
+                              }
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+            "execute_folds": 1
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "kgcnn_version": "2.0.3"
+        }
+    }
+    if use_descriptors and descs:
+        input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
+        if 'graph_descriptors' not in input_names:
+            hyper["model"]["config"]["inputs"].append(
+                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+            )
+            print(f"Added descriptor input with dimension {desc_dim} to DAttFP")
         hyper["model"]["config"]["use_graph_state"] = True
 
 # GRPE (Graph Relative Positional Encoding Transformer) - Enhanced GraphTransformer with relative positional encoding
@@ -3180,77 +3353,6 @@ elif architecture_name == 'GraphGPS':
             )
             print(f"Added descriptor input with dimension {desc_dim} to GraphGPS")
         hyper["model"]["config"]["input_graph_embedding"] = {"input_dim": 100, "output_dim": 64}
-        hyper["model"]["config"]["use_graph_state"] = True
-
-# MoGAT (Multi-order Graph Attention Network) - Water solubility prediction and interpretation
-elif architecture_name == 'MoGAT':
-    hyper = {
-        "model": {
-            "class_name": "make_model",
-            "module_name": "kgcnn.literature.MoGAT",
-            "config": {
-                "name": "MoGAT",
-                "inputs": [{"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
-                           {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
-                           {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True}],
-                "input_embedding": {"node": {"input_dim": 95, "output_dim": 128},
-                                    "edge": {"input_dim": 5, "output_dim": 128}},
-                "attention_args": {"units": 128},
-                "pooling_gat_nodes_args": {"pooling_method": "mean"},
-                "depthato": 4,
-                "depthmol": 4,
-                "dropout": 0.2,
-                "verbose": 10,
-                "output_embedding": "graph",
-                "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim],
-                               "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
-            }
-        },
-        "training": {
-            "fit": {
-                "batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2,
-                "callbacks": [
-                    {
-                        "class_name": "kgcnn>LinearLearningRateScheduler", "config": {
-                            "learning_rate_start": 0.001, "learning_rate_stop": 1e-05, "epo_min": 100, "epo": 200,
-                            "verbose": 0
-                        }
-                    }
-                ]
-            },
-            "compile": {
-                "optimizer": {"class_name": "Addons>AdamW", "config": {"lr": 0.001,
-                                                                       "weight_decay": 1e-05}
-                              }
-            },
-            "cross_validation": {"class_name": "KFold",
-                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
-            "execute_folds": 1
-        },
-        "data": {
-            "dataset": {
-                "class_name": "MoleculeNetDataset",
-                "config": {},
-                "methods": [
-                    {"set_attributes": {}}
-                ]
-            },
-            "data_unit": "mol/L"
-        },
-        "info": {
-            "postfix": "",
-            "kgcnn_version": "2.0.3"
-        }
-    }
-    
-    # Add descriptor input if using descriptors
-    if use_descriptors and descs:
-        input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-        if 'graph_descriptors' not in input_names:
-            hyper["model"]["config"]["inputs"].append(
-                {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
-            )
-            print(f"Added descriptor input with dimension {desc_dim} to MoGAT")
         hyper["model"]["config"]["use_graph_state"] = True
 
 # ContrastiveGIN implementation
@@ -4577,21 +4679,17 @@ elif architecture_name == 'MoGAT':
         ],
         "input_embedding": {
             "node": {"input_dim": 95, "output_dim": 128},
-            "graph": {"input_dim": 100, "output_dim": 64}
+            "graph": {"input_dim": 200, "output_dim": 128}
         },
-        "equiv_initialize_kwargs": {"dim": 3, "method": "zeros"},
-        "bessel_basis": {"num_radial": 20, "cutoff": 5.0, "envelope_exponent": 5},
+        "attention_args": {"units": 200},
+        "depthato": 2, "depthmol": 2,
         "pooling_args": {"pooling_method": "sum"},
-        "conv_args": {"units": 128, "cutoff": None, "conv_pool": "sum"},
-        "update_args": {"units": 128},
-        "equiv_normalization": False, 
-        "node_normalization": False,
-        "depth": 3,
+        "dropout": 0.2,
         "verbose": 10,
         "use_graph_state": True,
         "output_embedding": "graph", 
         "output_to_tensor": True,
-        "output_mlp": {"use_bias": [True, True], "units": [128, output_dim], "activation": ["swish", "linear"]}
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim], "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
     }
     
     # Update output dimensions based on config file
@@ -4634,7 +4732,81 @@ elif architecture_name == 'MoGAT':
         "info": {
             "postfix": "",
             "postfix_file": "",
-            "kgcnn_version": "3.0.0"
+            "kgcnn_version": "3.3.0"
+        }
+    }
+
+# MoGATv2 implementation with descriptors support (TRUE Nature Paper)
+elif architecture_name == 'MoGATv2':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found MoGATv2 architecture with descriptors!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "MoGATv2",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 128}
+        },
+        "attention_args": {"units": 128},
+        "depthato": 4,
+        "depthmol": 4,
+        "dropout": 0.15,
+        "verbose": 10,
+        "use_rms_norm": use_rms_norm,  # Enable RMS normalization
+        "rms_norm_args": {"epsilon": 1e-6, "scale": True},
+        "use_graph_state": True,
+        "output_embedding": "graph", 
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim], "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+    }
+    
+    # Update output dimensions based on config file
+    model_config = update_output_dimensions(model_config, architecture_name)
+    
+    hyper = {
+        "model": {
+            "class_name": "make_mogatv2_model",
+            "module_name": "kgcnn.literature.MoGAT",
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.4.0"
         }
     }
 
@@ -5092,6 +5264,13 @@ elif architecture_name == 'EGNN':
         }
     }
 
+########################################################
+# end of config models architectures
+########################################################
+
+    
+
+
 # Print to visually make sure we have parsed correctly the parameters
 print("My parameters")
 print("Loss", nn_loss)
@@ -5142,7 +5321,7 @@ if TRAIN == "True":
     if 'hyper' not in locals():
         hyper = None
 
-    if len(descs)>0:
+    if descs and len(descs)>0:
         print('There are Additional Descriptors/Conditions')
         if 'hyper' not in locals() or hyper is None:
             print('Warning: hyper not defined, skipping descriptor processing')
@@ -5211,7 +5390,7 @@ if TRAIN == "True":
     
     # Check if architecture was found
     if 'hyper' not in locals() or hyper is None:
-        raise ValueError(f"Architecture '{architecture_name}' is not implemented. Available architectures: GCN, GAT, GATv2, CMPNN, CoAttentiveFP, AttentiveFPPlus, CMPNNPlus, DMPNNAttention, DGIN, AddGNN, GraphTransformer, RGCN, rGIN, rGINE, GIN, GINE, GraphGPS, PNA, ExpC, EGAT, TransformerGAT, GRPE, KAGAT, DHTNN, DHTNNPlus, AWARE, MoGAT, ContrastiveGIN")
+        raise ValueError(f"Architecture '{architecture_name}' is not implemented. Available architectures: GCN, GAT, GATv2, CMPNN, CoAttentiveFP, AttentiveFPPlus, CMPNNPlus, DMPNNAttention, DGIN, AddGNN, GraphTransformer, RGCN, rGIN, rGINE, GIN, GINE, GraphGPS, PNA, ExpC, EGAT, TransformerGAT, GRPE, KAGAT, DHTNN, DHTNNPlus, AWARE, MoGAT, MoGATv2, ContrastiveGIN")
     
     print(f"Selected architecture: {architecture_name}")
     print(f"Model name: {hyper['model']['config']['name']}")
@@ -5326,6 +5505,15 @@ if TRAIN == "True":
             model = make_configurable_moe_model(**hyperparam['model']["config"])
         elif architecture_name == 'MultiChem':
             from kgcnn.literature.MultiChem import make_model
+            model = make_model(**hyperparam['model']["config"])
+        elif architecture_name == 'MoGATv2':
+            from kgcnn.literature.MoGAT import make_mogatv2_model
+            model = make_mogatv2_model(**hyperparam['model']["config"])
+        elif architecture_name == 'DGAT':
+            from kgcnn.literature.DGAT import make_model
+            model = make_model(**hyperparam['model']["config"])
+        elif architecture_name == 'DAttFP':
+            from kgcnn.literature.DAttFP import make_model
             model = make_model(**hyperparam['model']["config"])
         elif architecture_name == 'Schnet':
             from kgcnn.literature.Schnet import make_model
@@ -5596,7 +5784,7 @@ else:
     descs = ['desc%s' % (i) for i in range(desc_dim)]
 
     """
-    if len(descs)>0:
+    if descs and len(descs)>0:
         print('There are Additional Descriptors/Conditions')
         if 'use_graph_state' in hyper["model"]["config"].keys():
             print(hyper["model"]["config"]['use_graph_state'])
@@ -5622,6 +5810,24 @@ else:
                 hyper["model"]["config"]["inputs"] = [
                     {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
                     {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+                ]
+            elif hyper["model"]["config"]["name"] == 'DGAT':
+                # For DGAT, ensure we have exactly the right inputs in the right order
+                hyper["model"]["config"]["inputs"] = [
+                    {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": (None, 11), "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
+                    {"shape": (None, 1), "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+                ]
+            elif hyper["model"]["config"]["name"] == 'DAttFP':
+                # For DAttFP, ensure we have exactly the right inputs in the right order
+                hyper["model"]["config"]["inputs"] = [
+                    {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": (None, 11), "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
+                    {"shape": (None, 1), "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
                     {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
                 ]
             else:
