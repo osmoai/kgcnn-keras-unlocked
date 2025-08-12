@@ -389,6 +389,12 @@ def make_crystal_model(inputs: list = None,
         out = ks.layers.Flatten()(out)  # Flatten() required for to Set2Set output.
         # ROBUST: Use generalized descriptor fusion
         out = fuse_descriptors_with_output(out, graph_descriptors, fusion_method="concatenate")
+        
+        # Pre-output MLP RMS normalization (only place we apply it)
+        if use_rms_norm:
+            out = RMSNormalization(**rms_norm_args)(out)
+            print(f"🔧 Applied pre-output MLP RMS normalization to NMPN crystal model")
+        
         out = MLP(**output_mlp)(out)
     elif output_embedding == 'node':
         if graph_descriptors is not None:
