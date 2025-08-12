@@ -33,6 +33,18 @@ global_normalization_args = {
         "epsilon", "center", "scale", "beta_initializer", "gamma_initializer", "alpha_initializer", "beta_regularizer",
         "gamma_regularizer", "beta_constraint", "alpha_constraint", "gamma_constraint", "alpha_regularizer"
     ],
+    "RMSNormalization": [
+        "epsilon", "center", "scale", "beta_initializer", "gamma_initializer", "beta_regularizer",
+        "gamma_regularizer", "beta_constraint", "gamma_constraint"
+    ],
+    "GraphRMSNormalization": [
+        "epsilon", "center", "scale", "beta_initializer", "gamma_initializer", "beta_regularizer",
+        "gamma_regularizer", "beta_constraint", "gamma_constraint"
+    ],
+    "graph_rms": [
+        "epsilon", "center", "scale", "beta_initializer", "gamma_initializer", "beta_regularizer",
+        "gamma_regularizer", "beta_constraint", "gamma_constraint"
+    ],
     "GroupNormalization": [
         "groups", "axis", "epsilon", "center", "scale", "beta_initializer", "gamma_initializer", "beta_regularizer",
         "gamma_regularizer", "beta_constraint", "gamma_constraint"]
@@ -490,57 +502,345 @@ class GraphNormalization(GraphBaseLayer):
 
 @ks.utils.register_keras_serializable(package='kgcnn', name='GraphInstanceNormalization')
 class GraphInstanceNormalization(GraphNormalization):
-    r"""Graph instance normalization for (ragged) graph tensor objects.
+    r"""Graph Instance normalization for (ragged) graph tensor objects.
 
-    Following convention suggested by `GraphNorm: A Principled Approach (...) <https://arxiv.org/abs/2009.03294>`__ .
-
-    The definition of normalization terms for graph neural networks can be categorized as follows. Here we copy the
-    definition and description of `<https://arxiv.org/abs/2009.03294>`_ . Note that for keras the batch dimension is
-    the first dimension.
+    Uses `GraphNormalization` with `mean_shift=False` to perform instance normalization.
+    Instance normalization normalizes each individual sample in a batch independently.
+    This is useful for tasks where the absolute scale of features is not important.
 
     .. math::
 
-        \text{Norm}(\hat{h}_{i,j,g}) = \gamma \cdot \frac{\hat{h}_{i,j,g} - \mu}{\sigma} + \beta,
+        \text{InstanceNorm}(\hat{h}_{i,j,g}) = \gamma \cdot \frac{\hat{h}_{i,j,g} - \mu_{i,g}}{\sigma_{i,g}} + \beta,
 
-    Consider a batch of graphs :math:`{G_{1}, \dots , G_{b}}` where :math:`b` is the batch size.
-    Let :math:`n_{g}` be the number of nodes in graph :math:`G_{g}` .
-    We generally denote :math:`\hat{h}_{i,j,g}` as the inputs to the normalization module, e.g.,
-    the :math:`j` -th feature value of node :math:`v_i` of graph :math:`G_{g}` ,
-    :math:`i = 1, \dots , n_{g}` , :math:`j = 1, \dots , d` , :math:`g = 1, \dots , b` .
-
-    For InstanceNorm, we regard each graph as an instance. The normalization is
-    then applied to the feature values across all nodes for each
-    individual graph, i.e., over dimension :math:`i` of :math:`\hat{h}_{i,j,g}` .
-
-    .. code-block:: python
-
-        import tensorflow as tf
-        from kgcnn.layers.norm import GraphInstanceNormalization
-        layer = GraphInstanceNormalization()
-        test = tf.ragged.constant([[[0.0, 0.0],[1.0, -1.0]],[[1.0, 1.0],[0.0, 0.0],[-2.0, -2.0]]], ragged_rank=1)
-        print(layer(test))
+    where :math:`\mu_{i,g}` and :math:`\sigma_{i,g}` are computed per node per graph.
 
     """
 
     def __init__(self, **kwargs):
-        r"""Initialize layer :obj:`GraphBatchNormalization`.
+        r"""Initialize layer :obj:`GraphInstanceNormalization`.
 
         Args:
-            epsilon: Small float added to variance to avoid dividing by zero. Defaults to 1e-3.
+            **kwargs: Keyword arguments passed to `GraphNormalization`.
+                Note that `mean_shift` will be set to `False` for instance normalization.
+        """
+        kwargs['mean_shift'] = False
+        super(GraphInstanceNormalization, self).__init__(**kwargs)
+
+
+@ks.utils.register_keras_serializable(package='kgcnn', name='RMSNormalization')
+class RMSNormalization(ks.layers.Layer):
+    r"""RMS (Root Mean Square) normalization layer.
+
+    RMS normalization is a simpler alternative to Layer Normalization that only normalizes
+    by the root mean square of the input, without centering. This can be more stable
+    and computationally efficient in some cases.
+
+    .. math::
+
+        \text{RMSNorm}(x) = \gamma \cdot \frac{x}{\sqrt{\text{mean}(x^2) + \epsilon}} + \beta
+
+    """
+
+    def __init__(self,
+                 axis=-1,
+                 epsilon=1e-6,
+                 center=False,
+                 scale=True,
+                 beta_initializer='zeros',
+                 gamma_initializer='ones',
+                 beta_regularizer=None,
+                 gamma_regularizer=None,
+                 beta_constraint=None,
+                 gamma_constraint=None,
+                 **kwargs):
+        r"""Initialize layer :obj:`RMSNormalization`.
+
+        Args:
+            axis: Integer or List/Tuple. The axis or axes to normalize across.
+                Defaults to -1, the last dimension in the input.
+            epsilon: Small float added to variance to avoid dividing by zero. Defaults to 1e-6.
             center: If True, add offset of `beta` to normalized tensor. If False,
-                `beta` is ignored. Defaults to True.
+                `beta` is ignored. Defaults to False (RMS norm typically doesn't center).
             scale: If True, multiply by `gamma`. If False, `gamma` is not used.
-                Defaults to True. When the next layer is linear (also e.g. `nn.relu`),
-                this can be disabled since the scaling will be done by the next layer.
-            beta_initializer: Initializer for the beta weight. Defaults to 'zeros'.
-            gamma_initializer: Initializer for the gamma weight. Defaults to 'ones'.
-            alpha_initializer: Initializer for the alpha weight. Defaults to 'ones'.
+                Defaults to True.
+            beta_initializer: Initializer for the beta weight. Defaults to zeros.
+            gamma_initializer: Initializer for the gamma weight. Defaults to ones.
             beta_regularizer: Optional regularizer for the beta weight. None by default.
             gamma_regularizer: Optional regularizer for the gamma weight. None by default.
-            alpha_regularizer: Optional regularizer for the alpha weight. None by default.
             beta_constraint: Optional constraint for the beta weight. None by default.
             gamma_constraint: Optional constraint for the gamma weight. None by default.
-            alpha_constraint: Optional constraint for the alpha weight. None by default.
-
         """
-        super(GraphInstanceNormalization, self).__init__(mean_shift=False, **kwargs)
+        super(RMSNormalization, self).__init__(**kwargs)
+        self.axis = axis
+        self.epsilon = epsilon
+        self.center = center
+        self.scale = scale
+        self.beta_initializer = ks.initializers.get(beta_initializer)
+        self.gamma_initializer = ks.initializers.get(gamma_initializer)
+        self.beta_regularizer = ks.regularizers.get(beta_regularizer)
+        self.gamma_regularizer = ks.regularizers.get(gamma_regularizer)
+        self.beta_constraint = ks.constraints.get(beta_constraint)
+        self.gamma_constraint = ks.constraints.get(gamma_constraint)
+
+    def build(self, input_shape):
+        """Build the layer weights."""
+        input_shape = tf.TensorShape(input_shape)
+        if not input_shape.ndims:
+            raise ValueError('Input shape must have a defined number of dimensions.')
+        
+        # Convert axis to positive integers and ensure it's a list
+        self.axis = get_positive_axis(self.axis, input_shape.ndims)
+        if isinstance(self.axis, int):
+            self.axis = [self.axis]
+        
+        # Create weights
+        if self.scale:
+            self.gamma = self.add_weight(
+                name='gamma',
+                shape=[input_shape.dims[dim].value for dim in self.axis],
+                initializer=self.gamma_initializer,
+                regularizer=self.gamma_regularizer,
+                constraint=self.gamma_constraint,
+                dtype=self.dtype,
+                trainable=True)
+        else:
+            self.gamma = None
+            
+        if self.center:
+            self.beta = self.add_weight(
+                name='beta',
+                shape=[input_shape.dims[dim].value for dim in self.axis],
+                initializer=self.beta_initializer,
+                regularizer=self.beta_regularizer,
+                constraint=self.beta_constraint,
+                dtype=self.dtype,
+                trainable=True)
+        else:
+            self.beta = None
+            
+        self.built = True
+
+    def call(self, inputs, **kwargs):
+        """Forward pass of the RMS normalization layer."""
+        # Calculate RMS (root mean square)
+        squared = tf.square(inputs)
+        mean_squared = tf.reduce_mean(squared, axis=self.axis, keepdims=True)
+        rms = tf.sqrt(mean_squared + self.epsilon)
+        
+        # Normalize
+        normalized = inputs / rms
+        
+        # Apply scaling and offset with proper broadcasting
+        if self.scale:
+            # Ensure gamma has the right shape for broadcasting
+            gamma_shape = [1] * inputs.shape.ndims
+            for i, dim in enumerate(self.axis):
+                gamma_shape[dim] = self.gamma.shape[i] if i < len(self.gamma.shape) else 1
+            gamma_broadcast = tf.reshape(self.gamma, gamma_shape)
+            normalized = normalized * gamma_broadcast
+            
+        if self.center:
+            # Ensure beta has the right shape for broadcasting
+            beta_shape = [1] * inputs.shape.ndims
+            for i, dim in enumerate(self.axis):
+                beta_shape[dim] = self.beta.shape[i] if i < len(self.beta.shape) else 1
+            beta_broadcast = tf.reshape(self.beta, beta_shape)
+            normalized = normalized + beta_broadcast
+            
+        return normalized
+
+    def get_config(self):
+        """Get layer configuration."""
+        config = {
+            'axis': self.axis,
+            'epsilon': self.epsilon,
+            'center': self.center,
+            'scale': self.scale,
+            'beta_initializer': ks.initializers.serialize(self.beta_initializer),
+            'gamma_initializer': ks.initializers.serialize(self.gamma_initializer),
+            'beta_regularizer': ks.regularizers.serialize(self.beta_regularizer),
+            'gamma_regularizer': ks.regularizers.serialize(self.gamma_regularizer),
+            'beta_constraint': ks.constraints.serialize(self.beta_constraint),
+            'gamma_constraint': ks.constraints.serialize(self.gamma_constraint),
+        }
+        base_config = super(RMSNormalization, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
+@ks.utils.register_keras_serializable(package='kgcnn', name='GraphRMSNormalization')
+class GraphRMSNormalization(GraphBaseLayer):
+    r"""Graph RMS normalization for (ragged) graph tensor objects.
+
+    Uses `RMSNormalization` on all node or edge features in a batch.
+    This is similar to `GraphLayerNormalization` but uses RMS normalization instead.
+
+    .. math::
+
+        \text{GraphRMSNorm}(\hat{h}_{i,j,g}) = \gamma \cdot \frac{\hat{h}_{i,j,g}}{\sqrt{\text{mean}(\hat{h}_{i,j,g}^2) + \epsilon}} + \beta,
+
+    where normalization is applied across feature dimensions for each node in each graph.
+
+    """
+
+    def __init__(self,
+                 axis=-1,
+                 epsilon=1e-6,
+                 center=False,
+                 scale=True,
+                 beta_initializer='zeros',
+                 gamma_initializer='ones',
+                 beta_regularizer=None,
+                 gamma_regularizer=None,
+                 beta_constraint=None,
+                 gamma_constraint=None,
+                 **kwargs):
+        r"""Initialize layer :obj:`GraphRMSNormalization`.
+
+        Args:
+            axis: Integer or List/Tuple. The axis or axes to normalize across.
+                Typically this is the features axis/axes. The left-out axes are
+                typically the batch axis/axes. This argument defaults to `-1`, the last dimension in the input.
+            epsilon: Small float added to variance to avoid dividing by zero. Defaults to 1e-6.
+            center: If True, add offset of `beta` to normalized tensor. If False,
+                `beta` is ignored. Defaults to False (RMS norm typically doesn't center).
+            scale: If True, multiply by `gamma`. If False, `gamma` is not used.
+                Defaults to True.
+            beta_initializer: Initializer for the beta weight. Defaults to zeros.
+            gamma_initializer: Initializer for the gamma weight. Defaults to ones.
+            beta_regularizer: Optional regularizer for the beta weight. None by default.
+            gamma_regularizer: Optional regularizer for the gamma weight. None by default.
+            beta_constraint: Optional constraint for the beta weight. None by default.
+            gamma_constraint: Optional constraint for the gamma weight. None by default.
+        """
+        super(GraphRMSNormalization, self).__init__(**kwargs)
+        # The axis 0,1 are merged for ragged embedding input.
+        if isinstance(axis, (list, tuple)):
+            self.axis = [get_positive_axis(ax, 2) for ax in axis]
+        else:
+            self.axis = get_positive_axis(axis, 2)
+        self.epsilon = epsilon
+        self.center = center
+        self.scale = scale
+        self.beta_initializer = ks.initializers.get(beta_initializer)
+        self.gamma_initializer = ks.initializers.get(gamma_initializer)
+        self.beta_regularizer = ks.regularizers.get(beta_regularizer)
+        self.gamma_regularizer = ks.regularizers.get(gamma_regularizer)
+        self.beta_constraint = ks.constraints.get(beta_constraint)
+        self.gamma_constraint = ks.constraints.get(gamma_constraint)
+
+    def build(self, input_shape):
+        """Build the layer weights."""
+        input_shape = tf.TensorShape(input_shape)
+        if not input_shape.ndims:
+            raise ValueError('Input shape must have a defined number of dimensions.')
+        
+        # Ensure axis is a list for iteration
+        if isinstance(self.axis, int):
+            axis_list = [self.axis]
+        else:
+            axis_list = self.axis
+        
+        # Create weights
+        if self.scale:
+            # Handle None dimensions for ragged tensors
+            gamma_shape = []
+            for dim in axis_list:
+                dim_value = input_shape.dims[dim].value
+                if dim_value is None:
+                    # For ragged tensors, use 1 as default
+                    gamma_shape.append(1)
+                else:
+                    gamma_shape.append(dim_value)
+            
+            self.gamma = self.add_weight(
+                name='gamma',
+                shape=gamma_shape,
+                initializer=self.gamma_initializer,
+                regularizer=self.gamma_regularizer,
+                constraint=self.gamma_constraint,
+                dtype=self.dtype,
+                trainable=True)
+        else:
+            self.gamma = None
+            
+        if self.center:
+            # Handle None dimensions for ragged tensors
+            beta_shape = []
+            for dim in axis_list:
+                dim_value = input_shape.dims[dim].value
+                if dim_value is None:
+                    # For ragged tensors, use 1 as default
+                    beta_shape.append(1)
+                else:
+                    beta_shape.append(dim_value)
+            
+            self.beta = self.add_weight(
+                name='beta',
+                shape=beta_shape,
+                initializer=self.beta_initializer,
+                regularizer=self.beta_regularizer,
+                constraint=self.beta_constraint,
+                dtype=self.dtype,
+                trainable=True)
+        else:
+            self.beta = None
+            
+        self.built = True
+
+    def call(self, inputs, **kwargs):
+        """Forward pass of the graph RMS normalization layer."""
+        # Calculate RMS (root mean square)
+        squared = tf.square(inputs)
+        mean_squared = tf.reduce_mean(squared, axis=self.axis, keepdims=True)
+        rms = tf.sqrt(mean_squared + self.epsilon)
+        
+        # Normalize
+        normalized = inputs / rms
+        
+        # Apply scaling and offset with proper broadcasting
+        if self.scale and self.gamma is not None:
+            # Ensure gamma has the right shape for broadcasting
+            gamma_shape = [1] * inputs.shape.ndims
+            # Handle both single axis and list of axes
+            if isinstance(self.axis, int):
+                axis_list = [self.axis]
+            else:
+                axis_list = self.axis
+                
+            for i, dim in enumerate(axis_list):
+                gamma_shape[dim] = self.gamma.shape[i] if i < len(self.gamma.shape) else 1
+            gamma_broadcast = tf.reshape(self.gamma, gamma_shape)
+            normalized = normalized * gamma_broadcast
+            
+        if self.center and self.beta is not None:
+            # Ensure beta has the right shape for broadcasting
+            beta_shape = [1] * inputs.shape.ndims
+            # Handle both single axis and list of axes
+            if isinstance(self.axis, int):
+                axis_list = [self.axis]
+            else:
+                axis_list = self.axis
+                
+            for i, dim in enumerate(axis_list):
+                beta_shape[dim] = self.beta.shape[i] if i < len(self.beta.shape) else 1
+            beta_broadcast = tf.reshape(self.beta, beta_shape)
+            normalized = normalized + beta_broadcast
+            
+        return normalized
+
+    def get_config(self):
+        """Get layer configuration."""
+        config = {
+            'axis': self.axis,
+            'epsilon': self.epsilon,
+            'center': self.center,
+            'scale': self.scale,
+            'beta_initializer': ks.initializers.serialize(self.beta_initializer),
+            'gamma_initializer': ks.initializers.serialize(self.gamma_initializer),
+            'beta_regularizer': ks.regularizers.serialize(self.beta_regularizer),
+            'gamma_regularizer': ks.regularizers.serialize(self.gamma_regularizer),
+            'beta_constraint': ks.constraints.serialize(self.beta_constraint),
+            'gamma_constraint': ks.constraints.serialize(self.gamma_constraint),
+        }
+        base_config = super(GraphRMSNormalization, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))

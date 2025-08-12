@@ -1,8 +1,7 @@
 import tensorflow as tf
-# import kgcnn.ops.activ
 from kgcnn.layers.modules import Dense, Activation, Dropout
 from kgcnn.layers.norm import GraphBatchNormalization, GraphLayerNormalization, GraphNormalization, \
-    GraphInstanceNormalization
+    GraphInstanceNormalization, RMSNormalization, GraphRMSNormalization
 from kgcnn.layers.norm import global_normalization_args
 from kgcnn.layers.base import GraphBaseLayer
 from kgcnn.layers.relational import RelationalDense
@@ -15,7 +14,8 @@ class MLPBase(GraphBaseLayer):
     r"""Base class for multilayer perceptron that consist of multiple feed-forward networks.
 
     This base class simply manages layer arguments for :obj:`MLP`. They contain arguments for :obj:`Dense`,
-    :obj:`Dropout` and :obj:`BatchNormalization` or :obj:`LayerNormalization` or :obj:`GraphNormalization`
+    :obj:`Dropout` and :obj:`BatchNormalization` or :obj:`LayerNormalization` or :obj:`GraphNormalization` 
+    or :obj:`RMSNormalization` or :obj:`GraphRMSNormalization`
     since MLP is made up of stacked :obj:`Dense` layers with optional normalization and
     dropout to improve stability or regularization. Here, a list in place of arguments must be provided that applies
     to each layer. If not a list is given, then the single argument is used for each layer.
@@ -266,9 +266,12 @@ class MLP(MLPBase):
             "BatchNormalization": ks.layers.BatchNormalization,
             "GraphBatchNormalization": GraphBatchNormalization,
             "LayerNormalization": ks.layers.LayerNormalization,
+            "RMSNormalization": RMSNormalization,
             "GraphLayerNormalization": GraphLayerNormalization,
             "GraphNormalization": GraphNormalization,
-            "GraphInstanceNormalization": GraphInstanceNormalization
+            "GraphInstanceNormalization": GraphInstanceNormalization,
+            "GraphRMSNormalization": GraphRMSNormalization,
+            "graph_rms": GraphRMSNormalization
         }
         if not self._supress_dense:
             self.mlp_dense_layer_list = [
@@ -337,7 +340,7 @@ class RelationalMLP(MLP):
 
     Additionally, graph oriented normalization is supported. You can choose :obj:`normalization_technique` to be
     either 'BatchNormalization', 'LayerNormalization', 'GraphLayerNormalization', or 'GraphBatchNormalization'
-    or 'GraphNormalization' .
+    or 'GraphNormalization' or 'RMSNormalization' or 'GraphRMSNormalization'.
 
     """
 
