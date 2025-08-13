@@ -36,6 +36,12 @@ import pickle
 # import tensorflow_addons as tfa
 # from tensorflow_addons import optimizers
 
+# Import our custom Adam-atan2 optimizer
+from adam_atan2_optimizer import AdamAtan2
+
+# Import sklearn for descriptor normalization
+from sklearn.preprocessing import StandardScaler
+
 
 # Define the config
 conf_name = sys.argv[1]
@@ -44,16 +50,96 @@ config.read(conf_name);
 
 print("Load config file: ", conf_name);
 
+# Global descriptor scaler for normalization
+descriptor_scaler = None
+
 def descriptor_callback (mg, ds):
-    return np.array(ds[descs],dtype='float32')
+    """Simple descriptor callback with optional normalization"""
+    global descriptor_scaler
+    
+    # Extract descriptors
+    if descs and len(descs) > 0:
+        desc_values = np.array(ds[descs], dtype='float32')
+    else:
+        return np.array([], dtype='float32')
+    
+    # Apply normalization if scaler is available
+    if normalize_descriptors and descriptor_scaler is not None:
+        return descriptor_scaler.transform(desc_values.reshape(1, -1)).flatten()
+    
+    return desc_values
 
-def descriptor_callback_result0 (mg, ds):
-    """Descriptor callback for Result0 only - uses desc0"""
-    return np.array(ds['desc0'],dtype='float32')
+# Single generic callback handles all descriptor columns
 
-def descriptor_callback_result1 (mg, ds):
-    """Descriptor callback for Result1 only - uses desc1"""
-    return np.array(ds['desc1'],dtype='float32')
+def fit_descriptor_scaler(dataset):
+    """Fit sklearn StandardScaler on training descriptors"""
+    global descriptor_scaler
+    
+    if not normalize_descriptors or not descs:
+        return None
+    
+    print("🔧 Fitting descriptor scaler on training data...")
+    
+    # Collect all descriptor values from training data
+    all_descriptors = []
+    for graph in dataset:
+        if 'graph_descriptors' in graph:
+            desc_values = np.array([graph['graph_descriptors'][i] for i in range(len(descs))], dtype='float32')
+            all_descriptors.append(desc_values)
+    
+    if all_descriptors:
+        # Convert to 2D array for sklearn
+        X = np.array(all_descriptors)
+        
+        # Import and fit StandardScaler
+        descriptor_scaler = StandardScaler()
+        descriptor_scaler.fit(X)
+        
+        print(f"✅ Descriptor scaler fitted on {len(X)} samples")
+        print(f"   Mean: {descriptor_scaler.mean_}")
+        print(f"   Std:  {descriptor_scaler.scale_}")
+        
+        return descriptor_scaler
+    
+    return None
+
+def load_descriptor_scaler(model_file):
+    """Load descriptor scaler from saved model (always try to load, ignore config)"""
+    global descriptor_scaler
+    
+    try:
+        with tarfile.open(model_file, 'r') as tar:
+            # Extract descriptor_normalization.pkl
+            tar.extract('descriptor_normalization.pkl')
+            
+            # Load normalization info
+            with open('descriptor_normalization.pkl', 'rb') as f:
+                norm_config = pickle.load(f)
+            
+            # Check if normalization was enabled during training
+            if norm_config.get('enabled', False):
+                print("🔧 Loading descriptor normalization parameters from saved model...")
+                
+                # Reconstruct StandardScaler
+                from sklearn.preprocessing import StandardScaler
+                descriptor_scaler = StandardScaler()
+                descriptor_scaler.mean_ = np.array(norm_config['mean'])
+                descriptor_scaler.scale_ = np.array(norm_config['std'])
+                descriptor_scaler.var_ = descriptor_scaler.scale_ ** 2
+                
+                print(f"✅ Descriptor scaler loaded: method={norm_config.get('method', 'unknown')}")
+                print(f"   Mean: {descriptor_scaler.mean_}")
+                print(f"   Std:  {descriptor_scaler.scale_}")
+                return descriptor_scaler
+            else:
+                print("ℹ️  Model was trained without descriptor normalization")
+            
+            return None
+            
+    except Exception as e:
+        print(f"⚠️  Could not load descriptor normalization: {e}")
+        return None
+
 
 def getConfig(section, attribute, default=""):
     try:
@@ -99,6 +185,21 @@ def RMSEmask(y_true, y_pred):
     sumsq = K.sum(masked * err, keepdims=True)
     num = tf.cast(K.sum(masked, keepdims=True), dtype=tf.float32)
     return K.sqrt(sumsq / (num + K.epsilon()))
+
+
+def MSEmask(y_true, y_pred):
+    # Compute the mean squared error, masked for NaN values
+    y_true = tf.cast(y_true, dtype=tf.float32)  # case of Classifiers
+    masked = tf.where(tf.math.is_nan(y_true), 0., 1.)
+    y_true_ = tf.where(tf.math.is_nan(y_true), 0., y_true)
+    y_pred_ = tf.where(tf.math.is_nan(y_true), 0., y_pred)
+
+    err = (y_true_ - y_pred_) * (y_true_ - y_pred_)
+
+    # Select the qualifying values and mask
+    sumsq = K.sum(masked * err, keepdims=True)
+    num = tf.cast(K.sum(masked, keepdims=True), dtype=tf.float32)
+    return sumsq / (num + K.epsilon())  # No sqrt - this is MSE, not RMSE
 
 
 class MaskedRMSE(tf.keras.metrics.Metric):
@@ -418,26 +519,18 @@ def prepData(name, labelcols, datasetname='Datamol', hyper=None, modelname=None,
         dataset.set_methods(hyper_dict["data"]["dataset"]["methods"])
 
     # Generate edge_indices_reverse for directed models
-    if modelname in ['MultiChem', 'DMPNN', 'DMPNNAttention', 'DGIN', 'EGAT', 'TransformerGAT', 'DHTNN', 'DHTNNPlus', 'DGAT', 'DAttFP']:
+    if modelname in ['MultiChem', 'DMPNN', 'DMPNNAttention', 'DGIN', 'EGAT', 'TransformerGAT', 'DHTNN', 'DHTNNPlus', 'DGAT', 'DAttFP', 'MoDGATv2', 'MoDMPNN']:
         print(f"Generating edge_indices_reverse for {modelname} model...")
-        import numpy as np
         for graph in dataset:
             if 'edge_indices' in graph and 'edge_indices_reverse' not in graph:
-                # Create reverse edge indices
+                # Create reverse edge coordinates (not indices)
                 edge_indices = np.array(graph['edge_indices'])
                 edge_indices_reverse = []
-                for i, edge in enumerate(edge_indices):
-                    # Find the reverse edge
-                    reverse_edge = np.array([edge[1], edge[0]])
-                    # Find matching reverse edges
-                    matches = np.where((edge_indices == reverse_edge).all(axis=1))[0]
-                    if len(matches) > 0:
-                        reverse_idx = matches[0]
-                        edge_indices_reverse.append(reverse_idx)
-                    else:
-                        # If reverse edge doesn't exist, use the same edge
-                        edge_indices_reverse.append(i)
-                graph['edge_indices_reverse'] = np.array(edge_indices_reverse).reshape(-1, 1)
+                for edge in edge_indices:
+                    # Create reverse edge: [target, source] instead of [source, target]
+                    reverse_edge = [edge[1], edge[0]]
+                    edge_indices_reverse.append(reverse_edge)
+                graph['edge_indices_reverse'] = np.array(edge_indices_reverse)
 
     invalid = dataset.clean(hyper_dict["model"]["config"]["inputs"])
     # I guess clean first and assert clean ok
@@ -483,6 +576,7 @@ loss_function_map = {
     "BCEmask": BCEmask,
     "CCEmask": CCEmask,
     "RMSEmask": RMSEmask,
+    "MSEmask": MSEmask,
     "MaskedRMSE": MaskedRMSE,
     "mean_squared_error": "mean_squared_error",
     "mean_absolute_error": "mean_absolute_error",
@@ -504,6 +598,15 @@ desc_dim = int(getConfig("Details", "desc_dim", 0));
 use_descriptors = strtobool(getConfig("Details", "use_descriptors", "False"));
 descriptor_columns = getConfig("Details", "descriptor_columns", "");
 use_rms_norm = strtobool(getConfig("Details", "use_rms_norm", "False"));
+
+# Optimizer configuration
+optimizer_type = getConfig("Details", "optimizer_type", "Adam");
+print(f"Using optimizer: {optimizer_type}")
+
+# Descriptor normalization configuration
+normalize_descriptors = strtobool(getConfig("Details", "normalize_descriptors", "False"));
+descriptor_norm_method = getConfig("Details", "descriptor_norm_method", "standardize");
+print(f"Descriptor normalization: {normalize_descriptors} (method: {descriptor_norm_method})")
 descs = None
 if use_descriptors and descriptor_columns:
     descs = [col.strip() for col in descriptor_columns.split(',')]
@@ -515,6 +618,39 @@ architecture_name = getConfig("Details", "architecture_name", 'AttFP');
 overwrite = getConfig("Details", "overwrite", 'False');
 
 print("Architecture selected:", architecture_name)
+
+# Function to get optimizer configuration based on optimizer_type
+def get_optimizer_config(optimizer_type, learning_rate=0.001, **kwargs):
+    """Get optimizer configuration based on optimizer type"""
+    if optimizer_type == "AdamAtan2":
+        config = {"learning_rate": learning_rate}
+        config.update(kwargs)
+        return {
+            "class_name": "AdamAtan2",
+            "config": config
+        }
+    elif optimizer_type == "Adam":
+        config = {"learning_rate": learning_rate}
+        config.update(kwargs)
+        return {
+            "class_name": "Adam",
+            "config": config
+        }
+    elif optimizer_type == "AdamW":
+        config = {"learning_rate": learning_rate, "weight_decay": 1e-05}
+        config.update(kwargs)
+        return {
+            "class_name": "Addons>AdamW",
+            "config": config
+        }
+    else:
+        # Default to Adam
+        config = {"learning_rate": learning_rate}
+        config.update(kwargs)
+        return {
+            "class_name": "Adam",
+            "config": config
+        }
 
 # Function to update output dimensions in model configuration
 def update_output_dimensions(config_dict, architecture_name=None):
@@ -696,7 +832,7 @@ if architecture_name == 'GCN':
                 ]
             },
             "compile": {
-                "optimizer": {"class_name": "Adam", "config": {"lr": 1e-03}},
+                "optimizer": get_optimizer_config(optimizer_type, cfg_learning_rate),
                 "metrics": ["accuracy", "balanced_accuracy", "precision", "recall"]
             },
             "cross_validation": {"class_name": "KFold",
@@ -769,7 +905,7 @@ elif architecture_name == 'GAT':
                 ]
             },
             "compile": {
-                "optimizer": {"class_name": "Adam", "config": {"lr": 5e-03}},
+                "optimizer": get_optimizer_config(optimizer_type, 5e-03),
                 "loss": "mean_absolute_error",
                 "metrics": ["accuracy", "balanced_accuracy", "precision", "recall"]
             },
@@ -836,7 +972,7 @@ elif architecture_name == 'GATv2':
                 ]
             },
             "compile": {
-                "optimizer": {"class_name": "Adam", "config": {"lr": 5e-03}},
+                "optimizer": get_optimizer_config(optimizer_type, 5e-03),
                 "loss": "mean_absolute_error"
             },
             "cross_validation": {"class_name": "KFold",
@@ -1371,7 +1507,7 @@ elif architecture_name in ['NMPN','MPNN']:
                 ]
             },
             "compile": {
-                "optimizer": {"class_name": "Adam", "config": {"lr": 1e-03}},
+                "optimizer": get_optimizer_config(optimizer_type, 1e-03),
                 "loss": "BCEmask"
             },
             "cross_validation": {"class_name": "KFold",
@@ -2052,7 +2188,7 @@ elif architecture_name == 'RGCN':
                 ]
             },
             "compile": {
-                "optimizer": {"class_name": "Adam", "config": {"lr": 1e-03}},
+                "optimizer": get_optimizer_config(optimizer_type, 1e-03),
                 "loss": "mean_absolute_error"
             },
             "cross_validation": {"class_name": "KFold",
@@ -2407,7 +2543,7 @@ elif architecture_name == 'GraphGPS':
                 ]
             },
             "compile": {
-                "optimizer": {"class_name": "Adam", "config": {"lr": 5e-04}},
+                "optimizer": get_optimizer_config(optimizer_type, 5e-04),
                 "loss": "mean_absolute_error"
             },
             "cross_validation": {"class_name": "KFold",
@@ -4642,7 +4778,7 @@ elif architecture_name == 'GraphSAGE':
                                    "config": {"learning_rate_start": 0.5e-3, "learning_rate_stop": 1e-5,
                                               "epo_min": 400, "epo": 500, "verbose": 0}}]
                     },
-            "compile": {"optimizer": {"class_name": "Adam", "config": {"lr": 5e-3}},
+            "compile": {"optimizer": get_optimizer_config(optimizer_type, 5e-3),
                         "loss": "mean_absolute_error"
                         },
             "cross_validation": {"class_name": "KFold",
@@ -4810,6 +4946,156 @@ elif architecture_name == 'MoGATv2':
         }
     }
 
+# MoDGATv2 implementation with descriptors support (Multi-Order Directed GAT)
+elif architecture_name == 'MoDGATv2':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found MoDGATv2 architecture with descriptors!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "MoDGATv2",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "attention_args": {"units": 128},
+        "depth": 4,
+        "dropout": 0.15,
+        "verbose": 10,
+        "use_rms_norm": use_rms_norm,  # Enable RMS normalization
+        "rms_norm_args": {"epsilon": 1e-6, "scale": True},
+        "use_graph_state": True,
+        "output_embedding": "graph", 
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim], "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+    }
+    
+    # Update output dimensions based on config file
+    model_config = update_output_dimensions(model_config, architecture_name)
+    
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.MoDGATv2",
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.4.0"
+        }
+    }
+
+# MoDMPNN implementation with descriptors support (Multi-Order Directed MPNN)
+elif architecture_name == 'MoDMPNN':
+    print(f"Checking architecture: {architecture_name}")
+    print("Found MoDMPNN architecture with descriptors!")
+    # Define model configuration in Python and update output dimensions
+    model_config = {
+        "name": "MoDMPNN",
+        "inputs": [
+            {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
+            {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
+            {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
+            {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+        ],
+        "input_embedding": {
+            "node": {"input_dim": 95, "output_dim": 128},
+            "edge": {"input_dim": 5, "output_dim": 128},
+            "graph": {"input_dim": 100, "output_dim": 64}
+        },
+        "units": 128,
+        "depth": 4,
+        "dropout_rate": 0.1,
+        "verbose": 10,
+        "use_rms_norm": use_rms_norm,  # Enable RMS normalization
+        "rms_norm_args": {"epsilon": 1e-6, "scale": True},
+        "use_graph_state": True,
+        "output_embedding": "graph", 
+        "output_to_tensor": True,
+        "output_mlp": {"use_bias": [True, True, False], "units": [200, 100, output_dim], "activation": ["kgcnn>leaky_relu", "selu", "linear"]}
+    }
+    
+    # Update output dimensions based on config file
+    model_config = update_output_dimensions(model_config, architecture_name)
+    
+    hyper = {
+        "model": {
+            "class_name": "make_model",
+            "module_name": "kgcnn.literature.MoDMPNN",
+            "config": model_config
+        },
+        "training": {
+            "fit": {"batch_size": 32, "epochs": 200, "validation_freq": 1, "verbose": 2, "callbacks": []
+                    },
+            "compile": {
+                "optimizer": {"class_name": "Adam",
+                              "config": {"lr": {
+                                  "class_name": "ExponentialDecay",
+                                  "config": {"initial_learning_rate": 0.001,
+                                             "decay_steps": 1600,
+                                             "decay_rate": 0.5, "staircase": False}
+                              }
+                              }
+                },
+                "loss": loss_function
+            },
+            "cross_validation": {"class_name": "KFold",
+                                 "config": {"n_splits": 5, "random_state": None, "shuffle": True}},
+        },
+        "data": {
+            "dataset": {
+                "class_name": "MoleculeNetDataset",
+                "config": {},
+                "methods": [
+                    {"set_attributes": {}}
+                ]
+            },
+            "data_unit": "mol/L"
+        },
+        "info": {
+            "postfix": "",
+            "postfix_file": "",
+            "kgcnn_version": "3.4.0"
+        }
+    }
+
 # MultiGraphMoE implementation with descriptors support
 elif architecture_name == 'MultiGraphMoE':
     print(f"Checking architecture: {architecture_name}")
@@ -4940,7 +5226,7 @@ elif architecture_name == 'Schnet':
                 ]
             },
             "compile": {
-                "optimizer": {"class_name": "Adam", "config": {"lr": 0.0005}},
+                "optimizer": get_optimizer_config(optimizer_type, 0.0005),
                 "loss": "mean_absolute_error"
             }
         },
@@ -5008,7 +5294,7 @@ elif architecture_name == 'HamNet':
             "fit": {"batch_size": 16, "epochs": 800, "validation_freq": 1, "verbose": 2, "callbacks": []
                     },
             "compile": {
-                "optimizer": {"class_name": "Addons>AdamW", "config": {"lr": 0.001, "weight_decay": 1e-05}},
+                "optimizer": get_optimizer_config(optimizer_type, 0.001, weight_decay=1e-05),
                 "loss": "mean_squared_error"
             },
             "cross_validation": {"class_name": "KFold",
@@ -5409,6 +5695,31 @@ if TRAIN == "True":
     dataset, invalid= prepData(TRAIN_FILE, cols, hyper=hyperparams, 
         modelname=architecture_name, overwrite=overwrite, descs=descs)
 
+    # Apply descriptor normalization BEFORE training if enabled
+    if normalize_descriptors and use_descriptors and descs:
+        print("🔧 Fitting and applying descriptor normalization on training data...")
+        scaler = fit_descriptor_scaler(dataset)
+        
+        if scaler is not None:
+            print("✅ Descriptor normalization parameters calculated")
+            print(f"   Mean: {scaler.mean_}")
+            print(f"   Std:  {scaler.scale_}")
+            
+            # Apply normalization to all graphs in dataset
+            for graph in dataset:
+                if 'graph_descriptors' in graph:
+                    # Transform descriptors using fitted scaler
+                    desc_values = np.array([graph['graph_descriptors'][i] for i in range(len(descs))], dtype='float32')
+                    normalized_desc = scaler.transform(desc_values.reshape(1, -1)).flatten()
+                    graph['graph_descriptors'] = normalized_desc
+            
+            print("✅ Applied descriptor normalization to training dataset")
+            
+            # Store scaler for later use
+            descriptor_scaler = scaler
+        else:
+            print("⚠️  Could not fit descriptor normalization")
+
     # Fix input names for models with descriptors - standardize to graph_descriptors
     if descs:
         print("Processing input names for descriptors...")
@@ -5508,7 +5819,16 @@ if TRAIN == "True":
             model = make_model(**hyperparam['model']["config"])
         elif architecture_name == 'MoGATv2':
             from kgcnn.literature.MoGAT import make_mogatv2_model
-            model = make_mogatv2_model(**hyperparam['model']["config"])
+            # Filter out internal config keys that shouldn't be passed to model creation
+            model_config = {k: v for k, v in hyperparam['model']["config"].items() 
+                           if not k.startswith('_')}
+            model = make_mogatv2_model(**model_config)
+        elif architecture_name == 'MoDGATv2':
+            from kgcnn.literature.MoDGATv2 import make_model
+            # Filter out internal config keys that shouldn't be passed to model creation
+            model_config = {k: v for k, v in hyperparam['model']["config"].items() 
+                           if not k.startswith('_')}
+            model = make_model(**model_config)
         elif architecture_name == 'DGAT':
             from kgcnn.literature.DGAT import make_model
             model = make_model(**hyperparam['model']["config"])
@@ -5636,6 +5956,34 @@ if TRAIN == "True":
 
     print(model.summary())
 
+    # Save descriptor normalization info separately (not in hyper config)
+    if normalize_descriptors and use_descriptors and descs and descriptor_scaler is not None:
+        print("🔧 Saving descriptor normalization info separately...")
+        normalization_info = {
+            "enabled": True,
+            "method": descriptor_norm_method,
+            "mean": descriptor_scaler.mean_.tolist(),
+            "std": descriptor_scaler.scale_.tolist()
+        }
+        # Save normalization info to a separate file
+        import pickle
+        with open("descriptor_normalization.pkl", "wb") as f:
+            pickle.dump(normalization_info, f)
+        print("✅ Descriptor normalization info saved to descriptor_normalization.pkl")
+    else:
+        print("✅ Descriptor normalization disabled - no info to save")
+        # Create empty normalization file for consistency
+        normalization_info = {
+            "enabled": False,
+            "method": None,
+            "mean": None,
+            "std": None
+        }
+        import pickle
+        with open("descriptor_normalization.pkl", "wb") as f:
+            pickle.dump(normalization_info, f)
+        print("✅ Empty descriptor normalization file created for consistency")
+
     # Start and time training
     hyper_fit = hyperparam['training']['fit']
     start = time.process_time()
@@ -5668,28 +6016,26 @@ if TRAIN == "True":
     model.save_weights(modelname)
     print("Saved model to disk")
     
-    # Save descriptor usage state for consistent inference
-    if use_descriptors and descs:
-        hyperparam["model"]["config"]["_descriptors_used"] = True
-        hyperparam["model"]["config"]["_desc_dim"] = desc_dim
-        print(f"✅ Saved descriptor usage state: descriptors_used=True, desc_dim={desc_dim}")
-    else:
-        hyperparam["model"]["config"]["_descriptors_used"] = False
-        hyperparam["model"]["config"]["_desc_dim"] = 0
-        print("✅ Saved descriptor usage state: descriptors_used=False")
+    # Descriptor normalization info already added above - no need to overwrite
+    print("✅ Descriptor normalization info already configured in model config")
+    
+    # Descriptor usage state is now handled separately via normalization file
+    print("✅ Descriptor usage state handled via normalization file")
     
     pickle.dump(hyperparam, open("modelparameters.p", "wb"))
 
     # Probably this should become model.save_weights()
     tar = tarfile.open(MODEL_FILE, "w:gz");
     tar.add(modelname);
-    tar.add("modelparameters.p")
+    tar.add("modelparameters.p");
+    tar.add("descriptor_normalization.pkl");
 
     tar.close();
 
     try:
         os.remove(modelname);
         os.remove("modelparameters.p")
+        os.remove("descriptor_normalization.pkl")
     except:
         pass;
 
@@ -5703,6 +6049,9 @@ else:
 
     print("Loaded model from disk")
     hyper = pickle.load(open("modelparameters.p", "rb"))
+    
+    # Load descriptor normalization from saved model (ignore config setting - use what was actually used during training)
+    load_descriptor_scaler(MODEL_FILE)
     
     # RESTORE descriptor usage state for consistent inference
     if hasattr(hyper, 'get') and callable(hyper.get) and 'model' in hyper and 'config' in hyper['model']:
@@ -5783,79 +6132,27 @@ else:
     cols = ['Result%s' % (i) for i in range(output_dim)]  # change this for MTL tasks not the case today
     descs = ['desc%s' % (i) for i in range(desc_dim)]
 
-    """
-    if descs and len(descs)>0:
-        print('There are Additional Descriptors/Conditions')
-        if 'use_graph_state' in hyper["model"]["config"].keys():
-            print(hyper["model"]["config"]['use_graph_state'])
-            hyper["model"]["config"]['use_graph_state']=True
-            # For AttentiveFP, ensure we have exactly the right inputs in the right order
-            if hyper["model"]["config"]["name"] == 'AttentiveFP':
-                hyper["model"]["config"]["inputs"] = [
-                    {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
-                    {"shape": (None, 11), "name": "edge_attributes", "dtype": "float32", "ragged": True},
-                    {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
-                ]
-            elif hyper["model"]["class_name"] == 'make_model_edge' and hyper["model"]["config"]["name"] == 'GIN':
-                # For GINE (edge model), ensure we have exactly the right inputs in the right order
-                hyper["model"]["config"]["inputs"] = [
-                    {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
-                    {"shape": (None, 11), "name": "edge_attributes", "dtype": "float32", "ragged": True},
-                    {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
-                ]
-            elif hyper["model"]["config"]["name"] == 'GIN':
-                # For GIN, ensure we have exactly the right inputs in the right order
-                hyper["model"]["config"]["inputs"] = [
-                    {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
-                    {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
-                ]
-            elif hyper["model"]["config"]["name"] == 'DGAT':
-                # For DGAT, ensure we have exactly the right inputs in the right order
-                hyper["model"]["config"]["inputs"] = [
-                    {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
-                    {"shape": (None, 11), "name": "edge_attributes", "dtype": "float32", "ragged": True},
-                    {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": (None, 1), "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
-                ]
-            elif hyper["model"]["config"]["name"] == 'DAttFP':
-                # For DAttFP, ensure we have exactly the right inputs in the right order
-                hyper["model"]["config"]["inputs"] = [
-                    {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
-                    {"shape": (None, 11), "name": "edge_attributes", "dtype": "float32", "ragged": True},
-                    {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
-                    {"shape": (None, 1), "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
-                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
-                ]
-            else:
-                # For other models, check if graph_descriptors is already in inputs to avoid duplicates
-                input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-                if 'graph_descriptors' not in input_names:
-                    hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False})
-            if 'input_embedding' in hyper["model"]["config"] and 'graph' not in hyper["model"]["config"]["input_embedding"]:
-                hyper["model"]["config"]["input_embedding"]["graph"] = {"input_dim": 100, "output_dim": 64}
-            model_name=hyper["model"]["config"]["name"]
-            model_module=hyper["model"]["module_name"]
-            model_class=hyper["model"]["class_name"]
-        else:
-            print('Model does not support use_graph_state, adding descriptor input manually')
-            # Add descriptor input manually for models that don't have use_graph_state
-            input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
-            if 'graph_descriptors' not in input_names:
-                hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False})
-            # Add graph embedding to input_embedding if it doesn't exist
-            if 'input_embedding' in hyper["model"]["config"] and 'graph' not in hyper["model"]["config"]["input_embedding"]:
-                hyper["model"]["config"]["input_embedding"]["graph"] = {"input_dim": 100, "output_dim": 64}
-    """
-
     print(hyper)
     print('evaluate/inference moed')
     print('is overwrite',overwrite)
     dataset, invalid= prepData(APPLY_FILE, cols, hyper=hyper, modelname=architecture_name,
                                 overwrite=overwrite, descs=descs)
+
+    # Apply descriptor normalization to test data if normalization was used during training
+    if descriptor_scaler is not None and use_descriptors and descs:
+        print("🔧 Applying descriptor normalization to test data...")
+        
+        # Apply normalization to all graphs in test dataset
+        for graph in dataset:
+            if 'graph_descriptors' in graph:
+                # Transform descriptors using fitted scaler
+                desc_values = np.array([graph['graph_descriptors'][i] for i in range(len(descs))], dtype='float32')
+                normalized_desc = descriptor_scaler.transform(desc_values.reshape(1, -1)).flatten()
+                graph['graph_descriptors'] = normalized_desc
+        
+        print("✅ Applied descriptor normalization to test dataset")
+    elif descriptor_scaler is None and use_descriptors and descs:
+        print("ℹ️  No descriptor normalization available - using raw descriptors")
 
     # Handle HyperParameter object access
     try:
@@ -5924,6 +6221,8 @@ else:
     # Do NOT modify any parameters, including use_graph_state
     print(f"🔒 Creating model with exact saved configuration")
     print(f"🔒 use_graph_state: {hyper_dict['model']['config'].get('use_graph_state', 'Not found')}")
+    
+    # No need to filter normalization parameters - they're saved separately now
     model = make_model(**hyper_dict['model']["config"])
     
     # Try to load stored best weights - FAIL if there's any mismatch
@@ -6008,4 +6307,72 @@ else:
         if graph_descriptors_input is not None:
             base_inputs.append(graph_descriptors_input)
         hyper["model"]["config"]["inputs"] = base_inputs
+    """
+
+    """
+    if descs and len(descs)>0:
+        print('There are Additional Descriptors/Conditions')
+        if 'use_graph_state' in hyper["model"]["config"].keys():
+            print(hyper["model"]["config"]['use_graph_state'])
+            hyper["model"]["config"]['use_graph_state']=True
+            # For AttentiveFP, ensure we have exactly the right inputs in the right order
+            if hyper["model"]["config"]["name"] == 'AttentiveFP':
+                hyper["model"]["config"]["inputs"] = [
+                    {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": (None, 11), "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+                ]
+            elif hyper["model"]["class_name"] == 'make_model_edge' and hyper["model"]["config"]["name"] == 'GIN':
+                # For GINE (edge model), ensure we have exactly the right inputs in the right order
+                hyper["model"]["config"]["inputs"] = [
+                    {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": (None, 11), "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+                ]
+            elif hyper["model"]["config"]["name"] == 'GIN':
+                # For GIN, ensure we have exactly the right inputs in the right order
+                hyper["model"]["config"]["inputs"] = [
+                    {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+                ]
+            elif hyper["model"]["config"]["name"] == 'DGAT':
+                # For DGAT, ensure we have exactly the right inputs in the right order
+                hyper["model"]["config"]["inputs"] = [
+                    {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": (None, 11), "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
+                    {"shape": (None, 1), "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+                ]
+            elif hyper["model"]["config"]["name"] == 'DAttFP':
+                # For DAttFP, ensure we have exactly the right inputs in the right order
+                hyper["model"]["config"]["inputs"] = [
+                    {"shape": (None, 41), "name": "node_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": (None, 11), "name": "edge_attributes", "dtype": "float32", "ragged": True},
+                    {"shape": (None, 2), "name": "edge_indices", "dtype": "int64", "ragged": True},
+                    {"shape": (None, 1), "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
+                    {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
+                ]
+            else:
+                # For other models, check if graph_descriptors is already in inputs to avoid duplicates
+                input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
+                if 'graph_descriptors' not in input_names:
+                    hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False})
+            if 'input_embedding' in hyper["model"]["config"] and 'graph' not in hyper["model"]["config"]["input_embedding"]:
+                hyper["model"]["config"]["input_embedding"]["graph"] = {"input_dim": 100, "output_dim": 64}
+            model_name=hyper["model"]["config"]["name"]
+            model_module=hyper["model"]["module_name"]
+            model_class=hyper["model"]["class_name"]
+        else:
+            print('Model does not support use_graph_state, adding descriptor input manually')
+            # Add descriptor input manually for models that don't have use_graph_state
+            input_names = [inp['name'] for inp in hyper["model"]["config"]["inputs"]]
+            if 'graph_descriptors' not in input_names:
+                hyper["model"]["config"]["inputs"].append({"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False})
+            # Add graph embedding to input_embedding if it doesn't exist
+            if 'input_embedding' in hyper["model"]["config"] and 'graph' not in hyper["model"]["config"]["input_embedding"]:
+                hyper["model"]["config"]["input_embedding"]["graph"] = {"input_dim": 100, "output_dim": 64}
     """
