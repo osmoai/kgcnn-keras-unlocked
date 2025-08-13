@@ -4957,7 +4957,7 @@ elif architecture_name == 'MoDGATv2':
             {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-            {"shape": [None, 2], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
+            {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
             {"shape": [desc_dim], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         ],
         "input_embedding": {
