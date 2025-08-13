@@ -217,7 +217,7 @@ def make_contrastive_gnn_model(
         else:
             # Other models: edge_indices is at position 2
             ed = input_tensors[2]  # edge_indices
-        e = ConstantEdgeFeatures(units=units)(ed)  # Use edge_indices for constant features
+        e = ConstantEdgeFeatures(units=units)(ed)  # Use edge_indices for constant features ... can it be None or controle by naming instead of list positioning input selection!!! 
     
     # Graph state (descriptors) - handle the case where graph_descriptors is at different positions
     graph_embedding = None
@@ -270,7 +270,7 @@ def make_contrastive_gnn_model(
             layer = ContrastiveGINConv(
                 units=units,
                 num_views=contrastive_args["num_views"],
-                depth=2,  # Internal GIN depth
+                depth=2,  # Internal GIN depth why 2 and 3 or 4 harcoded value!!!
                 use_contrastive_loss=contrastive_args["use_contrastive_loss"],
                 contrastive_loss_type=contrastive_args["contrastive_loss_type"],
                 temperature=contrastive_args["temperature"],
@@ -560,7 +560,7 @@ def make_contrastive_gnn_model(
                 expert2_out = expert2(aggregated)
                 expert3_out = expert3(aggregated)
                 
-                # Combine experts (simple averaging for now)
+                # Combine experts (simple averaging for now) could be an attention ...
                 moe_output = (expert1_out + expert2_out + expert3_out) / 3.0
                 
                 moe_views.append(moe_output)
@@ -715,7 +715,7 @@ def compile_contrastive_gnn_model(
     model,
     optimizer="adam",
     learning_rate=0.001,
-    loss="mse",
+    loss="mse", 
     metrics=None,
     contrastive_weight=0.1,
     diversity_weight=0.01,
@@ -841,7 +841,7 @@ def compile_contrastive_gnn_model(
     return model
 
 
-# Model factory dictionary
+# Model factory dictionary there are much more to add here
 contrastive_gnn_models = {
     "ContrastiveGIN": make_contrastive_gin_model,
     "ContrastiveGAT": make_contrastive_gat_model,

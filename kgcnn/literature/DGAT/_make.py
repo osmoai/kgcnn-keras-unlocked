@@ -3,7 +3,7 @@ from kgcnn.layers.casting import ChangeTensorType
 from kgcnn.layers.modules import Dense, Dropout, OptionalInputEmbedding
 from kgcnn.layers.mlp import GraphMLP, MLP
 from kgcnn.layers.pooling import PoolingNodes
-from ._dgat_conv import DGATLayer, PoolingNodesDGAT
+from ._dgat_conv import DGATLayer, DGATLayerCustom, PoolingNodesDGAT
 from kgcnn.model.utils import update_model_kwargs
 
 # Import the generalized input handling utilities
@@ -42,6 +42,7 @@ model_default = {
                         "graph": {"input_dim": 100, "output_dim": 64}},
     "dgat_args": {"units": 128, "use_bias": True, "activation": "relu",
                   "attention_units": 64, "use_edge_features": True},
+    "dgat_version": "paper",  # Options: "paper" (DGATv2) or "custom" (original DGAT)
     "depth": 4,
     "verbose": 10,
     "use_graph_state": False,
