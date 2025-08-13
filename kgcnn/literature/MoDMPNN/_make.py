@@ -1,25 +1,25 @@
-"""Multi-Order Directed Graph Attention Network v2 (MoDGATv2) Model Factory.
+"""Multi-Order Directed Message Passing Neural Network (MoDMPNN) Model Factory.
 
-This module provides the functional API for creating MoDGATv2 models.
+This module provides the functional API for creating MoDMPNN models.
 """
 
-from kgcnn.literature.MoDGATv2._modgatv2_conv import MoDGATv2Layer, PoolingNodesMoDGATv2
+import tensorflow as tf
+from kgcnn.literature.MoDMPNN._modmpnn_conv import MoDMPNNLayer, PoolingNodesMoDMPNN
 from kgcnn.layers.modules import Dense, OptionalInputEmbedding
 from kgcnn.layers.norm import RMSNormalization
 from kgcnn.layers.mlp import GraphMLP
 from kgcnn.layers.pooling import PoolingNodes
 from kgcnn.layers.modules import LazyConcatenate
 from kgcnn.utils.input_utils import create_mixed_input_embedding, get_molecular_feature_types
-from kgcnn.layers.geom import NodePosition, NodeDistanceEuclidean, GaussBasisLayer
 
 
 def model_default(
-    name="MoDGATv2",
+    name="MoDMPNN",
     inputs=None,
     input_embedding=None,
-    attention_args=None,
+    units=128,
     depth=4,
-    dropout=0.1,
+    dropout_rate=0.1,
     verbose=10,
     use_rms_norm=True,
     rms_norm_args=None,
@@ -29,15 +29,15 @@ def model_default(
     output_mlp=None,
     **kwargs
 ):
-    """Default model configuration for MoDGATv2.
+    """Default model configuration for MoDMPNN.
     
     Args:
         name: Model name
         inputs: Input layer configuration
         input_embedding: Input embedding configuration
-        attention_args: Attention layer arguments
-        depth: Number of DGAT layers
-        dropout: Dropout rate
+        units: Number of hidden units
+        depth: Number of DMPNN layers
+        dropout_rate: Dropout rate
         verbose: Verbosity level
         use_rms_norm: Whether to use RMS normalization
         rms_norm_args: RMS normalization arguments
@@ -55,19 +55,16 @@ def model_default(
             {"shape": [None, 41], "name": "node_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 11], "name": "edge_attributes", "dtype": "float32", "ragged": True},
             {"shape": [None, 2], "name": "edge_indices", "dtype": "int64", "ragged": True},
-            {"shape": [None, 2], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
+            {"shape": [None, 1], "name": "edge_indices_reverse", "dtype": "int64", "ragged": True},
             {"shape": [2], "name": "graph_descriptors", "dtype": "float32", "ragged": False}
         ]
     
     if input_embedding is None:
         input_embedding = {
-            "node": {"output_dim": 128},  # Mixed categorical/continuous - handled automatically
+            "node": {"output_dim": 128},  # Mixed categorical/continuous - handled automatically 
             "edge": {"input_dim": 5, "output_dim": 128},  # Categorical bond types
             "graph": {"output_dim": 64}  # Continuous descriptors
         }
-    
-    if attention_args is None:
-        attention_args = {"units": 128}
     
     if rms_norm_args is None:
         rms_norm_args = {"epsilon": 1e-6, "scale": True}
@@ -83,9 +80,9 @@ def model_default(
         "name": name,
         "inputs": inputs,
         "input_embedding": input_embedding,
-        "attention_args": attention_args,
+        "units": units,
         "depth": depth,
-        "dropout": dropout,
+        "dropout_rate": dropout_rate,
         "verbose": verbose,
         "use_rms_norm": use_rms_norm,
         "rms_norm_args": rms_norm_args,
@@ -99,9 +96,9 @@ def model_default(
 
 def make_model(inputs=None,
                input_embedding=None,
-               attention_args=None,
+               units=128,
                depth=4,
-               dropout=0.1,
+               dropout_rate=0.1,
                verbose=10,
                use_rms_norm=True,
                rms_norm_args=None,
@@ -109,16 +106,16 @@ def make_model(inputs=None,
                output_embedding="graph",
                output_to_tensor=True,
                output_mlp=None,
-               name="MoDGATv2",
+               name="MoDMPNN",
                **kwargs):
-    """Make MoDGATv2 model.
+    """Make MoDMPNN model.
     
     Args:
         inputs: Input layer configuration
         input_embedding: Input embedding configuration
-        attention_args: Attention layer arguments
-        depth: Number of DGAT layers
-        dropout: Dropout rate
+        units: Number of hidden units
+        depth: Number of DMPNN layers
+        dropout_rate: Dropout rate
         verbose: Verbosity level
         use_rms_norm: Whether to use RMS normalization
         rms_norm_args: RMS normalization arguments
@@ -137,9 +134,9 @@ def make_model(inputs=None,
         name=name,
         inputs=inputs,
         input_embedding=input_embedding,
-        attention_args=attention_args,
+        units=units,
         depth=depth,
-        dropout=dropout,
+        dropout_rate=dropout_rate,
         verbose=verbose,
         use_rms_norm=use_rms_norm,
         rms_norm_args=rms_norm_args,
@@ -153,9 +150,9 @@ def make_model(inputs=None,
     # Extract configuration
     inputs = config["inputs"]
     input_embedding = config["input_embedding"]
-    attention_args = config["attention_args"]
+    units = config["units"]
     depth = config["depth"]
-    dropout = config["dropout"]
+    dropout_rate = config["dropout_rate"]
     verbose = config["verbose"]
     use_rms_norm = config["use_rms_norm"]
     rms_norm_args = config["rms_norm_args"]
@@ -197,9 +194,9 @@ def make_model(inputs=None,
             name="graph_descriptor_projection"
         )(input_layers["graph_descriptors"])
     
-    # MoDGATv2 core layers
+    # MoDMPNN core layers
     if verbose > 0:
-        print(f"🏗️  Building MoDGATv2 (Multi-Order Directed) with depth={depth}")
+        print(f"🏗️  Building MoDMPNN (Multi-Order Directed MPNN) with depth={depth}")
     
     # Apply pre-attention RMS normalization
     if use_rms_norm:
@@ -207,15 +204,14 @@ def make_model(inputs=None,
             print(f"🔧 Applied pre-attention RMS normalization to layer 1")
         node_embedding = RMSNormalization(**rms_norm_args)(node_embedding)
     
-    # Main MoDGATv2 layer
-    modgatv2_output = MoDGATv2Layer(
-        units=attention_args["units"],
+    # Main MoDMPNN layer
+    modmpnn_output = MoDMPNNLayer(
+        units=units,
         depth=depth,
-        attention_heads=8,  # Default attention heads
-        dropout_rate=dropout,
+        dropout_rate=dropout_rate,
         use_rms_norm=use_rms_norm,
         rms_norm_args=rms_norm_args,
-        name="modgatv2_layer"
+        name="modmpnn_layer"
     )([
         node_embedding, edge_embedding, 
         input_layers["edge_indices"], input_layers["edge_indices_reverse"]
@@ -225,12 +221,12 @@ def make_model(inputs=None,
     if output_embedding == "graph":
         if use_graph_state:
             # Use graph state pooling
-            out = PoolingNodesMoDGATv2(pooling_method="mean")(modgatv2_output)
+            out = PoolingNodesMoDMPNN(pooling_method="mean")(modmpnn_output)
         else:
             # Use node pooling
-            out = PoolingNodes(pooling_method="mean")(modgatv2_output)
+            out = PoolingNodes(pooling_method="mean")(modmpnn_output)
     else:
-        out = modgatv2_output
+        out = modmpnn_output
     
     # Descriptor fusion
     if has_descriptors:
@@ -259,7 +255,7 @@ def make_model(inputs=None,
         out = tf.keras.layers.Lambda(lambda x: tf.convert_to_tensor(x))(out)
     
     if verbose > 0:
-        print(f"✅ MoDGATv2 (Multi-Order Directed) model built successfully with {len(config)} layers")
+        print(f"✅ MoDMPNN (Multi-Order Directed MPNN) model built successfully with {len(config)} layers")
     
     # Create model
     model = tf.keras.Model(inputs=list(input_layers.values()), outputs=out, name=name)

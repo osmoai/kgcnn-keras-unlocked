@@ -10,7 +10,7 @@ import tensorflow as tf
 from kgcnn.layers.mlp import GraphMLP
 from kgcnn.layers.norm import RMSNormalization
 from kgcnn.layers.pooling import PoolingNodes
-from kgcnn.layers.modules import Concatenate
+from kgcnn.layers.modules import LazyConcatenate
 
 
 class MoDMPNNLayer(tf.keras.layers.Layer):
@@ -255,10 +255,25 @@ class DirectedDMPNNLayer(tf.keras.layers.Layer):
         return updated_nodes, updated_edges
     
     def _gather_messages(self, node_features, edge_features, edge_indices):
-        """Gather messages from neighboring nodes."""
-        # This is a simplified message gathering - in practice you'd use
-        # proper graph operations from kgcnn
-        return edge_features
+        """Gather messages from neighboring nodes using proper graph operations."""
+        from kgcnn.layers.gather import GatherNodesOutgoing
+        from kgcnn.layers.aggr import AggregateLocalEdges
+        
+        # Gather neighboring node features for each edge
+        neighbor_nodes = GatherNodesOutgoing()([node_features, edge_indices])
+        
+        # Ensure edge_features has the right shape for concatenation
+        # edge_features: (None, 11, 128) -> (None, 128) by taking mean across feature dimension
+        edge_features_flat = tf.reduce_mean(edge_features, axis=1)  # Shape: (None, 128)
+        
+        # Concatenate flattened edge features with neighbor node features
+        from kgcnn.layers.modules import LazyConcatenate
+        edge_node_features = LazyConcatenate(axis=-1)([edge_features_flat, neighbor_nodes])
+        
+        # Aggregate messages for each node
+        messages = AggregateLocalEdges(pooling_method="sum")([node_features, edge_node_features, edge_indices])
+        
+        return messages
     
     def get_config(self):
         """Get layer configuration."""
